@@ -1,0 +1,4 @@
+requests>=2.31.0
+faster-whisper>=1.0.3
+zhconv>=1.4.3
+flask>=3.0.0

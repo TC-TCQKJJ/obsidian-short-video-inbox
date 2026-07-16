@@ -1,0 +1,26 @@
+.douyin-doubao-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.douyin-doubao-action button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.douyin-doubao-action-icon {
+  display: inline-flex;
+}
+
+.douyin-doubao-action-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.douyin-doubao-action-status {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}

@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>文案提取器 - 抖音内容提取</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'sans': ['Inter', '-apple-system', 'BlinkMacSystemFont', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
+                    },
+                    colors: {
+                        'douyin': {
+                            'red': '#F97316',
+                            'pink': '#FB923C',
+                            'coral': '#EA580C',
+                            'orange': '#F97316',
+                            'dark': '#1C1917',
+                            'gray': {
+                                50: '#FAFAF9', 100: '#F5F5F4', 200: '#E7E5E4',
+                                300: '#D6D3D1', 400: '#A8A29E', 500: '#78716C',
+                                600: '#57534E', 700: '#44403C', 800: '#292524', 900: '#1C1917',
+                            }
+                        }
+                    },
+                    boxShadow: {
+                        'card': '0 2px 8px rgba(0, 0, 0, 0.04), 0 4px 24px rgba(0, 0, 0, 0.06)',
+                        'input': '0 0 0 4px rgba(249, 115, 22, 0.12)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; -webkit-font-smoothing: antialiased; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+        @keyframes spin-slow { to { transform: rotate(360deg); } }
+        .animate-spin-slow { animation: spin-slow 1.5s linear infinite; }
+        .bg-gradient-douyin { background: linear-gradient(135deg, #F97316 0%, #FB923C 50%, #FDBA74 100%); }
+        .bg-gradient-mesh {
+            background:
+                radial-gradient(at 40% 20%, rgba(249, 115, 22, 0.1) 0px, transparent 50%),
+                radial-gradient(at 80% 0%, rgba(251, 146, 60, 0.08) 0px, transparent 50%),
+                radial-gradient(at 0% 60%, rgba(253, 186, 116, 0.06) 0px, transparent 50%);
+        }
+        .focus-ring:focus { outline: none; box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.2); }
+        .transition-smooth { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .select-pill {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            background-image: none;
+        }
+        .select-pill:disabled { opacity: 0.55; cursor: not-allowed; }
+        .model-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            height: 2.25rem;
+            padding: 0 0.75rem 0 0.625rem;
+            border-radius: 9999px;
+            background: #FFF7ED;
+            border: 1px solid rgba(251, 146, 60, 0.25);
+        }
+        .model-chip select.select-pill {
+            height: 1.5rem;
+            min-width: 4.5rem;
+            padding: 0 1.25rem 0 0;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: #9A3412;
+            background: transparent;
+            border: none;
+            border-radius: 0;
+        }
+        .model-chip select.select-pill:focus {
+            box-shadow: none;
+            outline: none;
+        }
+    </style>
+</head>
+<body class="bg-douyin-gray-50 min-h-screen bg-gradient-mesh" x-data="douyinExtractor()" x-init="checkHealth(); initFromServer()">
+
+    <!-- 无 JavaScript 时的降级提示 -->
+    <noscript>
+        <div class="max-w-xl mx-auto m-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-900">
+            请启用 JavaScript，或使用命令行：<code>python main.py "分享链接"</code>
+        </div>
+    </noscript>
+
+    <nav class="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-douyin-gray-100">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 bg-gradient-douyin rounded-xl flex items-center justify-center shadow-lg shadow-douyin-red/20">
+                        <svg class="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1-.1z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-semibold text-douyin-gray-900">文案提取器</h1>
+                        <p class="text-xs text-douyin-gray-400 -mt-0.5">抖音 · 本地 Whisper</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button @click="showSettings = true"
+                            class="w-9 h-9 rounded-full bg-douyin-gray-100 hover:bg-douyin-gray-200 flex items-center justify-center transition-smooth"
+                            title="转写设置">
+                        <svg class="w-5 h-5 text-douyin-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </button>
+                    <button @click="showHelp = !showHelp"
+                            class="w-9 h-9 rounded-full bg-douyin-gray-100 hover:bg-douyin-gray-200 flex items-center justify-center transition-smooth">
+                        <svg class="w-5 h-5 text-douyin-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 设置：Whisper 模型 -->
+    <div x-show="showSettings" x-transition.opacity class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+         @click.self="showSettings = false">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-fadeIn">
+            <div class="flex items-center justify-between mb-6">
+                <div>
+                    <h3 class="text-lg font-semibold text-douyin-gray-900">转写设置</h3>
+                    <p class="text-xs text-douyin-gray-400">本地 faster-whisper，无需 API Key</p>
+                </div>
+                <button @click="showSettings = false" class="w-8 h-8 rounded-full hover:bg-douyin-gray-100 flex items-center justify-center">
+                    <svg class="w-5 h-5 text-douyin-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <label class="block text-sm font-medium text-douyin-gray-700 mb-2">Whisper 模型（仅视频转写）</label>
+            <div class="relative">
+                <select x-model="whisperModel" @change="saveSettingsQuiet()"
+                        class="select-pill w-full h-11 pl-4 pr-9 text-sm font-medium rounded-xl bg-orange-50 border border-orange-100 text-orange-800 focus-ring">
+                    {% for m in models %}
+                    <option value="{{ m }}">{{ m }}</option>
+                    {% endfor %}
+                </select>
+                <svg class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-orange-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+            </div>
+            <p class="mt-2 text-xs text-douyin-gray-400">图文仅提取配文，不跑 Whisper。视频越长模型越大越慢。</p>
+            <button @click="saveSettings"
+                    class="mt-6 w-full h-11 bg-gradient-douyin text-white font-medium text-sm rounded-xl shadow-lg shadow-douyin-red/20 hover:opacity-90">
+                保存
+            </button>
+        </div>
+    </div>
+
+    <!-- 帮助 -->
+    <div x-show="showHelp" x-transition.opacity class="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+         @click.self="showHelp = false">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-fadeIn">
+            <h3 class="text-lg font-semibold text-douyin-gray-900 mb-4">使用说明</h3>
+            <div class="space-y-3 text-sm text-douyin-gray-600">
+                <div class="p-4 bg-douyin-gray-50 rounded-xl">
+                    <p class="font-medium text-douyin-gray-900 mb-1">获取信息</p>
+                    <p>仅解析分享页，显示标题、作者、类型，不下载。</p>
+                </div>
+                <div class="p-4 bg-douyin-gray-50 rounded-xl">
+                    <p class="font-medium text-douyin-gray-900 mb-1">提取文案</p>
+                    <p>视频：下载 + FFmpeg + 本地转写；图文：配文 + 配图。</p>
+                </div>
+                <div class="p-4 bg-douyin-gray-50 rounded-xl">
+                    <p class="font-medium text-douyin-gray-900 mb-1">输出位置</p>
+                    <p>项目 <code class="text-xs bg-white px-1 rounded">output/{作品ID}_{标题}/</code></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <div class="lg:col-span-5 space-y-6">
+                <div class="bg-white rounded-2xl shadow-card p-6">
+                    <label class="block text-sm font-medium text-douyin-gray-700 mb-2">分享链接</label>
+                    <div class="relative">
+                        <textarea x-model="url"
+                                  @keydown.meta.enter="extractText()"
+                                  @keydown.ctrl.enter="extractText()"
+                                  placeholder="粘贴 v.douyin.com 短链、note/video 链接或整段分享文案"
+                                  rows="4"
+                                  class="w-full px-4 py-3 text-sm border border-douyin-gray-200 rounded-xl resize-none focus-ring placeholder:text-douyin-gray-400"
+                                  :disabled="loading"></textarea>
+                        <button x-show="url" @click="url = ''; resetState()"
+                                class="absolute top-3 right-3 w-6 h-6 rounded-full bg-douyin-gray-100 hover:bg-douyin-gray-200 flex items-center justify-center">
+                            <svg class="w-3.5 h-3.5 text-douyin-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <p class="mt-2 text-xs text-douyin-gray-400">
+                        <kbd class="px-1.5 py-0.5 bg-douyin-gray-100 rounded">⌘</kbd> + <kbd class="px-1.5 py-0.5 bg-douyin-gray-100 rounded">Enter</kbd> 快速提取文案
+                    </p>
+                    <!-- 获取信息：单独一行 -->
+                    <button type="button" @click="extractInfo"
+                            :disabled="!url || loading"
+                            class="w-full mt-4 h-11 bg-douyin-gray-100 hover:bg-douyin-gray-200 text-douyin-gray-700 font-medium text-sm rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        获取信息
+                    </button>
+
+                    <!-- 模型选择 + 提取文案 -->
+                    <div class="flex gap-3 mt-3 items-center">
+                        <label class="model-chip flex-shrink-0 cursor-pointer hover:bg-orange-100/90 transition-smooth"
+                               :class="loading ? 'opacity-50 pointer-events-none' : ''"
+                               title="Whisper 模型（仅视频转写）">
+                            <span class="relative flex h-2 w-2 shrink-0">
+                                <span class="absolute inline-flex h-full w-full rounded-full bg-orange-400 animate-ping opacity-75"></span>
+                                <span class="relative inline-flex h-2 w-2 rounded-full bg-orange-500"></span>
+                            </span>
+                            <span class="text-xs text-orange-800/90 shrink-0">模型</span>
+                            <div class="relative">
+                                <select x-model="whisperModel" @change="saveSettingsQuiet()"
+                                        :disabled="loading"
+                                        class="select-pill cursor-pointer focus-ring rounded-sm">
+                                    {% for m in models %}
+                                    <option value="{{ m }}">{{ m }}</option>
+                                    {% endfor %}
+                                </select>
+                                <svg class="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-orange-600 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </div>
+                        </label>
+                        <button type="button" @click="extractText"
+                                :disabled="!url || loading"
+                                class="flex-1 h-11 bg-gradient-douyin text-white font-medium text-sm rounded-xl disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg shadow-douyin-red/20 hover:opacity-90">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            提取文案
+                        </button>
+                    </div>
+                    <p class="mt-3 text-xs text-orange-800 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">
+                        视频转写可能需数分钟，请勿关闭页面；图文通常几秒完成。
+                    </p>
+                </div>
+
+                <!-- 作品信息 -->
+                <div x-show="videoInfo" x-transition class="bg-white rounded-2xl shadow-card overflow-hidden">
+                    <div class="px-6 py-4 border-b border-douyin-gray-100 flex items-center justify-between">
+                        <span class="font-semibold text-douyin-gray-900">作品信息</span>
+                        <span class="text-xs px-2 py-0.5 rounded-full"
+                              :class="videoInfo?.content_type === 'image' ? 'bg-amber-100 text-amber-800' : 'bg-orange-100 text-orange-800'"
+                              x-text="videoInfo?.content_type === 'image' ? '图文' : '视频'"></span>
+                    </div>
+                    <div class="p-6 space-y-3">
+                        <h3 class="font-medium text-douyin-gray-900" x-text="videoInfo?.title"></h3>
+                        <p class="text-sm text-douyin-gray-500" x-show="videoInfo?.author">
+                            作者：<span x-text="videoInfo?.author"></span>
+                        </p>
+                        <p class="text-xs font-mono text-douyin-gray-400" x-text="'视频ID: ' + (videoInfo?.video_id || '')"></p>
+                        <a x-show="videoInfo?.download_url && videoInfo?.content_type !== 'image'"
+                           :href="`/api/video/download?url=${encodeURIComponent(videoInfo.download_url)}&filename=${encodeURIComponent((videoInfo.video_id || 'video') + '.mp4')}`"
+                           class="group flex items-center gap-3 p-3 bg-emerald-50 rounded-xl hover:bg-emerald-100/80 transition-smooth cursor-pointer border border-emerald-100">
+                            <div class="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
+                                <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                </svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs text-emerald-600 mb-0.5">无水印视频</p>
+                                <p class="text-sm font-medium text-emerald-800">点击下载原视频</p>
+                            </div>
+                            <svg class="w-5 h-5 text-emerald-600 flex-shrink-0 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                        </a>
+                        <p x-show="videoInfo?.image_count > 0" class="text-sm text-douyin-gray-600"
+                           x-text="`配图 ${videoInfo.image_count} 张（提取文案后预览）`"></p>
+                        <p x-show="videoInfo?.out_dir" class="text-xs text-douyin-gray-400 break-all" x-text="'目录: ' + videoInfo.out_dir"></p>
+                    </div>
+                </div>
+
+                <!-- 获取信息时的加载（提取文案进度在右侧） -->
+                <div x-show="loading && !extractingText" x-transition class="bg-white rounded-2xl shadow-card p-6">
+                    <div class="flex items-center gap-4">
+                        <div class="relative w-12 h-12 flex-shrink-0">
+                            <div class="absolute inset-0 rounded-full border-4 border-douyin-gray-100"></div>
+                            <div class="absolute inset-0 rounded-full border-4 border-douyin-red border-t-transparent animate-spin-slow"></div>
+                        </div>
+                        <div>
+                            <p class="font-medium text-douyin-gray-900" x-text="loadingText"></p>
+                            <p class="text-sm text-douyin-gray-400">请稍候…</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 错误 -->
+                <div x-show="error" x-transition class="bg-red-50 border border-red-100 rounded-2xl p-5">
+                    <h4 class="font-medium text-red-800">提取失败</h4>
+                    <p class="text-sm text-red-600 mt-1" x-text="error"></p>
+                    <button @click="error = ''" class="mt-2 text-xs text-red-500 hover:underline">关闭</button>
+                </div>
+            </div>
+
+            <!-- 右侧：空状态 / 提取中 / 结果 -->
+            <div class="lg:col-span-7">
+                <div x-show="!transcript && !(resultImages && resultImages.length)"
+                     class="bg-white rounded-2xl shadow-card min-h-[500px] flex flex-col p-8">
+                    <div class="flex-1 flex flex-col items-center justify-center text-center">
+                        <div class="relative w-24 h-24 mb-6">
+                            <div class="w-24 h-24 bg-douyin-gray-100 rounded-3xl flex items-center justify-center"
+                                 :class="loading && extractingText ? 'opacity-40' : ''">
+                                <svg class="w-12 h-12 text-douyin-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                            </div>
+                            <div x-show="loading && extractingText"
+                                 class="absolute inset-0 flex items-center justify-center">
+                                <div class="relative w-14 h-14">
+                                    <div class="absolute inset-0 rounded-full border-4 border-douyin-gray-100"></div>
+                                    <div class="absolute inset-0 rounded-full border-4 border-douyin-red border-t-transparent animate-spin-slow"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <h3 class="text-lg font-semibold text-douyin-gray-900 mb-2"
+                            x-text="loading && extractingText ? '提取中' : '等待提取'"></h3>
+                        <p class="text-sm text-douyin-gray-500 max-w-sm"
+                           x-text="loading && extractingText ? loadingText : '粘贴抖音分享链接，获取信息或一键提取文案（本地 Whisper，无需云端 API）'"></p>
+                        <p x-show="loading && extractingText"
+                           class="text-xs text-douyin-gray-400 mt-2">视频转写可能需数分钟，请勿关闭页面</p>
+
+                        <div x-show="!(loading && extractingText)"
+                             class="mt-6 w-full max-w-md rounded-xl border border-dashed border-douyin-gray-200 bg-douyin-gray-50/50 px-4 py-3.5">
+                            <p class="text-[11px] text-douyin-gray-400 mb-2.5 tracking-wide">支持能力</p>
+                            <div class="flex flex-wrap justify-center gap-2">
+                                <span class="inline-flex items-center rounded-full border border-orange-200/70 bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-800/90">无水印下载</span>
+                                <span class="inline-flex items-center rounded-full border border-orange-200/70 bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-800/90">图文配文</span>
+                                <span class="inline-flex items-center rounded-full border border-orange-200/70 bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-800/90">简体文案</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div x-show="loading && extractingText"
+                         x-transition
+                         class="w-full max-w-md mx-auto pt-6 mt-2 border-t border-douyin-gray-100">
+                        <p class="text-xs font-medium text-douyin-gray-500 mb-3">处理进度</p>
+                        <div class="space-y-2">
+                            <template x-for="(stepItem, index) in steps" :key="index">
+                                <div class="flex items-center gap-3 p-2.5 rounded-lg"
+                                     :class="step > index + 1 ? 'bg-orange-50' : step === index + 1 ? 'bg-orange-500/10' : ''">
+                                    <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0"
+                                         :class="step > index + 1 ? 'bg-orange-500 text-white' : step === index + 1 ? 'bg-douyin-red text-white' : 'bg-douyin-gray-200 text-douyin-gray-500'">
+                                        <span x-text="step > index + 1 ? '✓' : (index + 1)"></span>
+                                    </div>
+                                    <span class="text-sm text-douyin-gray-700" x-text="stepItem"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <div x-show="transcript || (resultImages && resultImages.length)" x-transition
+                     class="bg-white rounded-2xl shadow-card overflow-hidden flex flex-col min-h-[500px]">
+                    <div class="px-6 py-4 border-b border-douyin-gray-100 flex items-center justify-between flex-shrink-0">
+                        <span class="font-semibold text-douyin-gray-900">提取结果</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-douyin-gray-400" x-text="(transcript?.length || 0) + ' 字'"></span>
+                            <button @click="copyTranscript"
+                                    class="h-9 px-4 bg-douyin-gray-100 rounded-lg text-sm font-medium flex items-center gap-1">
+                                <span x-text="copied ? '已复制' : '复制'"></span>
+                            </button>
+                            <button @click="downloadTranscript"
+                                    class="h-9 px-4 bg-gradient-douyin text-white rounded-lg text-sm font-medium shadow-lg shadow-douyin-red/20">
+                                下载
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <p class="text-douyin-gray-700 leading-relaxed whitespace-pre-wrap" x-text="transcript"></p>
+                        <div x-show="resultImages && resultImages.length" class="mt-6">
+                            <p class="text-sm font-medium text-douyin-gray-700 mb-3"
+                               x-text="'配图 (' + resultImages.length + ' 张)'"></p>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                <template x-for="(src, i) in resultImages" :key="i">
+                                    <a :href="src" target="_blank" class="block rounded-lg overflow-hidden border border-douyin-gray-200 hover:shadow-md transition-smooth">
+                                        <img :src="src" class="w-full aspect-[3/4] object-cover" loading="lazy" alt="配图">
+                                    </a>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="px-6 py-3 bg-douyin-gray-50 border-t border-douyin-gray-100 text-xs text-douyin-gray-400 flex justify-between gap-4">
+                        <span>Powered by faster-whisper · 本地转写</span>
+                        <span class="truncate max-w-[50%]" x-text="videoInfo?.title"></span>
+                    </div>
+                    <p x-show="outDir" class="px-6 pb-4 text-xs text-douyin-gray-400 break-all" x-text="'保存目录: ' + outDir"></p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-douyin-gray-400">
+            <p>
+                Made with <span class="text-douyin-red">♥</span> · 抖音内容提取
+            </p>
+            <div class="flex items-center gap-4">
+                <a href="https://github.com/TC-TCQKJJ/obsidian-short-video-inbox"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="hover:text-orange-600 transition-smooth flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+                <span class="text-douyin-gray-300">·</span>
+                <span>v1.4.0</span>
+            </div>
+        </div>
+    </footer>
+
+    <div x-show="toast" x-transition class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-4 py-3 bg-douyin-gray-900 text-white text-sm rounded-xl shadow-2xl"
+         x-text="toast"></div>
+
+    <script>
+        function douyinExtractor() {
+            return {
+                url: '',
+                loading: false,
+                loadingText: '',
+                extractingText: false,
+                step: 0,
+                steps: ['解析分享链接', '下载内容', '处理媒体', '生成文案'],
+                stepsImage: ['解析分享链接', '下载配图', '提取配文'],
+                stepsVideo: ['解析分享链接', '下载视频', '提取音频', '语音识别'],
+                error: '',
+                videoInfo: null,
+                transcript: '',
+                resultImages: [],
+                outDir: '',
+                copied: false,
+                toast: '',
+                showHelp: false,
+                showSettings: false,
+                whisperModel: '{{ default_model }}',
+                engineReady: false,
+
+                async checkHealth() {
+                    const saved = localStorage.getItem('douyin_whisper_model');
+                    if (saved) this.whisperModel = saved;
+                    try {
+                        const res = await fetch('/api/health');
+                        const data = await res.json();
+                        this.engineReady = data.success;
+                    } catch (e) {
+                        console.error(e);
+                    }
+                },
+
+                initFromServer() {
+                    {% if error %}
+                    this.error = {{ error|tojson }};
+                    {% endif %}
+                    {% if result %}
+                    this.applyVideoInfo({
+                        video_id: {{ result.aweme_id|tojson }},
+                        title: {{ result.title|tojson }},
+                        author: {{ result.author|tojson }},
+                        content_type: {{ result.content_type|tojson }},
+                        out_dir: {{ result.out_dir|tojson }},
+                    });
+                    this.transcript = {{ result.transcript|tojson }};
+                    this.resultImages = {{ result.images|tojson }};
+                    this.outDir = {{ result.out_dir|tojson }};
+                    {% endif %}
+                },
+
+                saveSettingsQuiet() {
+                    localStorage.setItem('douyin_whisper_model', this.whisperModel);
+                },
+
+                saveSettings() {
+                    this.saveSettingsQuiet();
+                    this.showSettings = false;
+                    this.showToast('已保存模型: ' + this.whisperModel);
+                },
+
+                resetState() {
+                    this.error = '';
+                    this.transcript = '';
+                    this.resultImages = [];
+                    this.outDir = '';
+                    this.step = 0;
+                    this.extractingText = false;
+                },
+
+                showToast(msg) {
+                    this.toast = msg;
+                    setTimeout(() => this.toast = '', 2000);
+                },
+
+                applyVideoInfo(data) {
+                    this.videoInfo = {
+                        video_id: data.video_id || data.aweme_id,
+                        title: data.title,
+                        author: data.author,
+                        content_type: data.content_type || 'video',
+                        download_url: data.download_url,
+                        image_count: data.image_count || (data.images && data.images.length) || 0,
+                        out_dir: data.out_dir || '',
+                    };
+                },
+
+                startProgress(isImage) {
+                    this.extractingText = true;
+                    this.steps = isImage ? this.stepsImage : this.stepsVideo;
+                    this.step = 1;
+                    if (this._stepTimer) clearInterval(this._stepTimer);
+                    const maxStep = this.steps.length;
+                    this._stepTimer = setInterval(() => {
+                        if (this.step < maxStep) this.step++;
+                    }, isImage ? 2000 : 4000);
+                },
+
+                stopProgress() {
+                    if (this._stepTimer) clearInterval(this._stepTimer);
+                    this.step = this.steps.length + 1;
+                    this.extractingText = false;
+                },
+
+                async extractInfo() {
+                    if (!this.url || this.loading) return;
+                    this.resetState();
+                    this.loading = true;
+                    this.loadingText = '正在获取作品信息…';
+                    try {
+                        const res = await fetch('/api/video/info', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: this.url }),
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            this.applyVideoInfo(data);
+                            this.showToast('信息获取成功');
+                        } else {
+                            this.error = data.error || '获取失败';
+                        }
+                    } catch (e) {
+                        this.error = '网络错误，请确认服务已启动';
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async extractText() {
+                    if (!this.url || this.loading) return;
+                    this.resetState();
+                    this.loading = true;
+                    this.loadingText = '正在提取文案…';
+                    const guessImage = this.url.includes('/note/');
+                    this.startProgress(guessImage);
+                    try {
+                        const res = await fetch('/api/video/extract', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: this.url, model: this.whisperModel }),
+                        });
+                        const data = await res.json();
+                        this.stopProgress();
+                        if (data.success) {
+                            this.applyVideoInfo(data);
+                            this.transcript = data.text || '';
+                            this.resultImages = data.images || [];
+                            this.outDir = data.out_dir || '';
+                            this.showToast('文案提取成功');
+                        } else {
+                            this.error = data.error || '提取失败';
+                        }
+                    } catch (e) {
+                        this.stopProgress();
+                        this.error = '网络错误或处理超时，请查看终端日志';
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                async copyTranscript() {
+                    if (!this.transcript) return;
+                    try {
+                        await navigator.clipboard.writeText(this.transcript);
+                        this.copied = true;
+                        this.showToast('已复制');
+                        setTimeout(() => this.copied = false, 2000);
+                    } catch (e) {
+                        this.error = '复制失败';
+                    }
+                },
+
+                downloadTranscript() {
+                    const content = `# ${this.videoInfo?.title || '文案'}\n\n作者: ${this.videoInfo?.author || ''}\nID: ${this.videoInfo?.video_id || ''}\n\n---\n\n${this.transcript}`;
+                    const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `${this.videoInfo?.video_id || 'transcript'}.md`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                    this.showToast('已下载 Markdown');
+                },
+            };
+        }
+    </script>
+</body>
+</html>
