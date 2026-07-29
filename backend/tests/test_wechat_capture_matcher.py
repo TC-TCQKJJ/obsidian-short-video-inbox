@@ -422,7 +422,11 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
 
         self.assertEqual(matcher.recent_candidates(), [])
 
-        active = replace(preload, is_active=True)
+        active = replace(
+            preload,
+            is_active=True,
+            context_texts=(preload.title,),
+        )
         matcher.record_feed(active)
 
         self.assertEqual(
@@ -432,9 +436,11 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
 
     def test_active_mode_returns_only_latest_current_feed(self):
         matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
+        first_candidate = parse_feed_objects({"object": FEED})[0]
         first = replace(
-            parse_feed_objects({"object": FEED})[0],
+            first_candidate,
             is_active=True,
+            context_texts=(first_candidate.title,),
         )
         second_payload = {
             **FEED_WITH_OBJECT_ID,
@@ -448,9 +454,11 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
                 ],
             },
         }
+        second_candidate = parse_feed_objects({"object": second_payload})[0]
         second = replace(
-            parse_feed_objects({"object": second_payload})[0],
+            second_candidate,
             is_active=True,
+            context_texts=(second_candidate.title,),
         )
         for candidate in (first, second):
             preload = replace(candidate, is_active=False)
@@ -467,7 +475,7 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
             ["feed-object-456"],
         )
 
-    def test_active_mode_joins_current_feed_to_media_by_capture_id(self):
+    def test_active_mode_ignores_capture_id_without_dom_context(self):
         matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
         preload = parse_feed_objects({"object": FEED})[0]
         matcher.record_feed(preload)
@@ -485,11 +493,9 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
 
         matcher.record_feed(active)
 
-        matches = matcher.recent_candidates()
-        self.assertEqual([item.capture_id for item in matches], ["feed-123"])
-        self.assertIn("wxs.qq.com", matches[0].media_url)
+        self.assertEqual(matcher.recent_candidates(), [])
 
-    def test_active_mode_joins_playing_media_without_request_recency(self):
+    def test_active_mode_joins_dom_context_without_request_recency(self):
         matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
         preload = parse_feed_objects(
             {
@@ -511,6 +517,7 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
                     "https://findera4.video.qq.com/251/20302/stodownload"
                     "?token=playing"
                 ),
+                "context_texts": ["Playing target"],
             }
         )[0]
 
@@ -518,7 +525,7 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
 
         matches = matcher.recent_candidates()
         self.assertEqual([item.capture_id for item in matches], ["feed-playing"])
-        self.assertIn("token=playing", matches[0].media_url)
+        self.assertIn("token=preload", matches[0].media_url)
 
     def test_active_mode_matches_unique_title_in_nearest_dom_context(self):
         matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
@@ -634,6 +641,51 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
                 }
             )[0]
         )
+
+        self.assertEqual(
+            [item.capture_id for item in matcher.recent_candidates()],
+            ["feed-target"],
+        )
+
+    def test_active_candidate_survives_shared_stodownload_path(self):
+        matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
+        target = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-target",
+                "title": "姜哥有话说，#我们万岁",
+                "author": "非常姜老板",
+                "media_url": (
+                    "https://findera4.video.qq.com/251/20302/stodownload"
+                    "?token=target"
+                ),
+            }
+        )[0]
+        preload = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-preload",
+                "title": "失误集锦",
+                "author": "王显YU",
+                "media_url": (
+                    "https://findera4.video.qq.com/251/20302/stodownload"
+                    "?token=preload"
+                ),
+            }
+        )[0]
+        active = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_active_v1",
+                "context_texts": [
+                    "姜哥有话说，#我们万岁",
+                    "非常姜老板",
+                ],
+            }
+        )[0]
+
+        matcher.record_feed(target)
+        matcher.record_feed(active)
+        matcher.record_feed(preload)
 
         self.assertEqual(
             [item.capture_id for item in matcher.recent_candidates()],
