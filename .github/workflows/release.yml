@@ -1,12 +1,115 @@
-name: Release plugin
+name: Release
 
 on:
   push:
     tags:
       - "*"
 
+permissions:
+  contents: read
+
 jobs:
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify release version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          manifest_version="$(node -p "require('./manifest.json').version")"
+          package_version="$(node -p "require('./package.json').version")"
+          test "$tag" = "$manifest_version"
+          test "$tag" = "$package_version"
+      - run: npm ci
+      - name: Test and build
+        run: |
+          npm run check
+          npm test
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin
+          path: |
+            main.js
+            manifest.json
+            styles.css
+          if-no-files-found: error
+
+  backend:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Run backend tests
+        run: python -m unittest discover -s tests -p "test_*.py"
+
+  helper:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend/wechat_process_capture
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.23.x"
+          cache: false
+      - name: Configure MinGW
+        shell: pwsh
+        run: |
+          $gcc = Get-Command gcc.exe -ErrorAction SilentlyContinue
+          if (-not $gcc) {
+            choco install mingw --yes --no-progress
+          }
+          gcc --version
+      - name: Format check
+        shell: pwsh
+        run: |
+          $unformatted = gofmt -l main.go main_test.go
+          if ($unformatted) {
+            Write-Error "Unformatted Go files: $unformatted"
+          }
+      - name: Prepare patched dependency source
+        shell: pwsh
+        run: |
+          go mod download
+          go mod vendor
+          ./patch-sunnynet.ps1
+      - name: Test
+        run: go test -mod=vendor ./...
+      - name: Build and verify
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          go build -mod=vendor -trimpath -ldflags "-s -w" -o dist/wechat-process-capture.exe .
+          ./verify-binary.ps1 -Executable dist/wechat-process-capture.exe
+          (Get-FileHash -Algorithm SHA256 dist/wechat-process-capture.exe).Hash.ToLowerInvariant() |
+            Set-Content -Encoding ascii dist/wechat-process-capture.exe.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helper
+          path: backend/wechat_process_capture/dist/*
+          if-no-files-found: error
+
   release:
+    needs:
+      - plugin
+      - backend
+      - helper
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -14,26 +117,54 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/download-artifact@v4
         with:
-          node-version: 24
-          cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Test and build
+          name: plugin
+          path: dist/plugin
+      - uses: actions/download-artifact@v4
+        with:
+          name: helper
+          path: dist/helper
+      - name: Build Windows distribution
+        shell: bash
         run: |
-          npm run check
-          npm test
-          npm run build
-      - name: Attest build provenance
+          tag="${GITHUB_REF#refs/tags/}"
+          package_name="obsidian-short-video-inbox-${tag}-windows"
+          package_root="dist/package/${package_name}"
+          mkdir -p "$package_root"
+          cp dist/plugin/main.js dist/plugin/manifest.json dist/plugin/styles.css "$package_root/"
+          cp -R backend scripts third_party "$package_root/"
+          cp README.md SECURITY.md CHANGELOG.md LICENSE THIRD_PARTY_NOTICES.md "$package_root/"
+          mkdir -p "$package_root/backend/wechat_process_capture/dist"
+          cp dist/helper/wechat-process-capture.exe \
+            dist/helper/wechat-process-capture.exe.sha256 \
+            "$package_root/backend/wechat_process_capture/dist/"
+          (
+            cd dist/package
+            zip -r "${package_name}.zip" "$package_name"
+            sha256sum "${package_name}.zip" > "${package_name}.zip.sha256"
+          )
+      - name: Attest release artifacts
         uses: actions/attest@v4
         with:
           subject-path: |
-            main.js
-            styles.css
+            dist/plugin/main.js
+            dist/helper/wechat-process-capture.exe
+            dist/package/*.zip
       - name: Create draft release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           tag="${GITHUB_REF#refs/tags/}"
-          gh release create "$tag" --title "$tag" --draft main.js manifest.json styles.css
+          gh release create "$tag" \
+            --title "$tag" \
+            --draft \
+            --generate-notes \
+            dist/plugin/main.js \
+            dist/plugin/manifest.json \
+            dist/plugin/styles.css \
+            dist/helper/wechat-process-capture.exe \
+            dist/helper/wechat-process-capture.exe.sha256 \
+            "dist/package/obsidian-short-video-inbox-${tag}-windows.zip" \
+            "dist/package/obsidian-short-video-inbox-${tag}-windows.zip.sha256"

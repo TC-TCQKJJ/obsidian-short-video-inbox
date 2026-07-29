@@ -102,8 +102,10 @@ class CaptureCoordinator:
 class NativeCaptureControlWindow:
     root: object
     on_capture: object
+    service_status: object | None = None
 
     def __post_init__(self) -> None:
+        self._service_label = None
         self._status_label = None
 
     def show(self) -> None:
@@ -111,16 +113,17 @@ class NativeCaptureControlWindow:
 
         self.root.title(APP_TITLE)
         self.root.resizable(False, False)
-        self.root.geometry("340x160")
+        self.root.geometry("400x170")
 
         frame = tk.Frame(self.root, padx=20, pady=18)
         frame.pack(fill="both", expand=True)
-        tk.Label(
+        self._service_label = tk.Label(
             frame,
             text=CONTROL_SERVICE_TEXT,
             fg="#167C3B",
             anchor="w",
-        ).pack(fill="x")
+        )
+        self._service_label.pack(fill="x")
         self._status_label = tk.Label(
             frame,
             text=CONTROL_IDLE_TEXT,
@@ -134,7 +137,17 @@ class NativeCaptureControlWindow:
             width=24,
             height=2,
         ).pack(fill="x", pady=(16, 0))
+        self.poll_service_status()
         self.root.deiconify()
+
+    def poll_service_status(self) -> None:
+        if self._service_label is not None and callable(self.service_status):
+            try:
+                text = str(self.service_status())
+            except Exception:
+                text = CONTROL_SERVICE_TEXT
+            self._service_label.configure(text=text)
+        self.root.after(1000, self.poll_service_status)
 
     def check_current_video(self) -> bool:
         if self._status_label is not None:

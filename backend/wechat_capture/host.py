@@ -14,6 +14,7 @@ from wechat_capture.addon import PassiveWechatCaptureAddon, build_proxy_options
 from wechat_capture.client import CaptureBackendClient
 from wechat_capture.pending_queue import PendingCaptureQueue
 from wechat_capture.matcher import CaptureMatcher
+from wechat_capture.process_capture import ProcessCaptureWorker
 from wechat_capture.security import CapturePaths, ensure_local_token
 from wechat_capture.ui import (
     CaptureCoordinator,
@@ -262,8 +263,8 @@ class WechatCaptureHost:
     def start(self) -> None:
         if self._started or self._stopped:
             raise RuntimeError("WechatCaptureHost can only be started once")
-        proxy_options = build_proxy_options(self.paths)
         if self._proxy_worker is None:
+            proxy_options = build_proxy_options(self.paths)
             self._proxy_worker = MitmProxyWorker(
                 build_master=lambda: _build_dump_master(proxy_options, self.matcher),
             )
@@ -392,16 +393,43 @@ def main(argv=None) -> int:
     capture_logger.addHandler(file_handler)
     root = tk.Tk()
     root.withdraw()
+    matcher = CaptureMatcher(
+        max_age_seconds=120,
+        logger=capture_logger,
+        require_active=True,
+    )
+    token = ensure_local_token(paths)
+    process_worker = ProcessCaptureWorker(
+        paths=paths,
+        token=token,
+        matcher=matcher,
+        logger=capture_logger,
+    )
     host = WechatCaptureHost(
         root=root,
-        matcher=CaptureMatcher(max_age_seconds=120),
+        matcher=matcher,
         paths=paths,
-        token=ensure_local_token(paths),
+        token=token,
+        proxy_worker=process_worker,
+        proxy_join_timeout=30.0,
     )
-    host.start()
+    try:
+        host.start()
+    except Exception:
+        capture_logger.exception("WeChat process capture failed to start")
+        from tkinter import messagebox
+
+        messagebox.showerror(
+            "微信视频号捕获",
+            f"捕获驱动启动失败。\n请查看日志：\n{paths.log_path}",
+            parent=root,
+        )
+        root.destroy()
+        return 1
     control_window = NativeCaptureControlWindow(
         root,
         host.coordinator.handle_hotkey,
+        service_status=process_worker.processor.diagnostic_text,
     )
     control_window.show()
     root.mainloop()

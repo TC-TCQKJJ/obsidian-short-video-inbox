@@ -135,6 +135,59 @@ class WechatCaptureAddonTest(unittest.TestCase):
         self._assert_response_untouched(flow, original, response_headers)
         self.assertEqual(matcher.feed_count, 1)
 
+    def test_unmatched_json_logs_schema_without_payload_values(self):
+        matcher = CaptureMatcher(max_age_seconds=30)
+        logger = self._build_logger()
+        addon = self._build_addon(matcher, logger=logger)
+        payload = {
+            "data": {
+                "objectDesc": "LEAKED_TITLE",
+                "mediaList": [
+                    {
+                        "playUrl": "https://finder.video.qq.com/private.mp4?token=LEAKED",
+                        "decodeKey": "LEAKED_KEY",
+                    }
+                ],
+            }
+        }
+
+        with self.assertLogs(logger, level="INFO") as captured:
+            addon.record_feed_payload(payload)
+
+        self.assertEqual(matcher.feed_count, 0)
+        self.assertEqual(len(captured.output), 1)
+        self.assertIn("data.objectDesc:string", captured.output[0])
+        self.assertIn("data.mediaList:array", captured.output[0])
+        self.assertIn("data.mediaList.playUrl:string", captured.output[0])
+        self.assertIn("data.mediaList.decodeKey:string", captured.output[0])
+        self.assertNotIn("LEAKED_TITLE", captured.output[0])
+        self.assertNotIn("finder.video.qq.com", captured.output[0])
+        self.assertNotIn("LEAKED_KEY", captured.output[0])
+
+    def test_rejected_normalized_feed_logs_only_safe_media_shape(self):
+        matcher = CaptureMatcher(max_age_seconds=30)
+        logger = self._build_logger()
+        addon = self._build_addon(matcher, logger=logger)
+
+        with self.assertLogs(logger, level="INFO") as captured:
+            addon.record_feed_payload(
+                {
+                    "schema": "xiaolou_capture_v1",
+                    "capture_id": "LEAKED_ID",
+                    "media_url": (
+                        "https://unexpected.example/private/video"
+                        "?token=LEAKED_TOKEN"
+                    ),
+                }
+            )
+
+        message = captured.output[0]
+        self.assertIn("host:unexpected.example", message)
+        self.assertIn("path:extensionless", message)
+        self.assertNotIn("LEAKED_ID", message)
+        self.assertNotIn("private/video", message)
+        self.assertNotIn("LEAKED_TOKEN", message)
+
     def test_non_json_binary_response_is_ignored_without_modifying_response(self):
         matcher = CaptureMatcher(max_age_seconds=30)
         addon = self._build_addon(matcher)
@@ -285,6 +338,51 @@ class WechatCaptureAddonTest(unittest.TestCase):
                 "Accept": "*/*",
             },
         )
+
+    def test_stodownload_media_request_is_observed(self):
+        matcher = CaptureMatcher(max_age_seconds=30)
+        addon = self._build_addon(matcher)
+        feed = {
+            "id": "feed-stodownload",
+            "objectDesc": {
+                "description": "Current download route",
+                "media": [
+                    {
+                        "url": "https://finder.video.qq.com/251/20302/stodownload",
+                        "urlToken": "?token=feed",
+                    }
+                ],
+            },
+        }
+        addon.record_feed_payload({"object": feed})
+
+        addon.record_request_event(
+            "https://finder.video.qq.com/251/20302/stodownload?token=latest",
+            observed_at=time.time(),
+        )
+
+        self.assertEqual(len(matcher.recent_candidates()), 1)
+
+    def test_extensionless_media_cdn_request_is_observed(self):
+        matcher = CaptureMatcher(max_age_seconds=30)
+        addon = self._build_addon(matcher)
+        media_url = (
+            "https://wxsmw.wxs.qq.com/251/20302/media?token=extensionless"
+        )
+        addon.record_feed_payload(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-extensionless",
+                "media_url": media_url,
+            }
+        )
+
+        addon.record_request_event(
+            media_url,
+            observed_at=time.time(),
+        )
+
+        self.assertEqual(len(matcher.recent_candidates()), 1)
 
     def test_logs_redact_signed_query_and_cookie(self):
         self.assertEqual(

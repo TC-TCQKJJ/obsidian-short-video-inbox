@@ -1,19 +1,23 @@
 from __future__ import annotations
 
+import gzip
 import json
 import logging
+import zlib
 from urllib.parse import urlsplit
 
 from wechat_capture.feed_parser import parse_feed_objects
 from wechat_capture.matcher import CaptureMatcher
 from wechat_capture.redaction import redact_url
-from wechat_capture.security import CapturePaths, is_allowed_host
+from wechat_capture.security import CapturePaths, is_allowed_host, is_media_host
 
 
 MAX_RESPONSE_BODY_BYTES = 8 * 1024 * 1024
 MEDIA_SUFFIXES = (".mp4", ".m3u8", ".flv")
+MEDIA_PATH_NAMES = ("/stodownload",)
 SAFE_REQUEST_HEADERS = ("User-Agent", "Referer", "Origin", "Range", "Accept")
 CLASH_HEALTH_CHECKS = {("www.gstatic.com", "/generate_204")}
+MAX_SCHEMA_ENTRIES = 80
 
 
 class PassiveWechatCaptureAddon:
@@ -41,13 +45,32 @@ class PassiveWechatCaptureAddon:
             flow.kill()
             return
 
-        if not _is_media_path(getattr(request, "path", "")):
-            return
-
-        self.matcher.record_media_request(
+        self.record_request_event(
             _request_url(request),
             observed_at=float(getattr(request, "timestamp_start", 0.0) or 0.0),
             request_headers=_safe_request_headers(getattr(request, "headers", None)),
+        )
+
+    def record_request_event(
+        self,
+        url: str,
+        *,
+        observed_at: float,
+        request_headers: dict[str, str] | None = None,
+    ) -> None:
+        parsed = urlsplit(url)
+        if not is_allowed_host(parsed.hostname or ""):
+            return
+        if not _is_media_path(parsed.path) and not (
+            is_media_host(parsed.hostname or "")
+            and parsed.path not in {"", "/"}
+        ):
+            return
+
+        self.matcher.record_media_request(
+            url,
+            observed_at=observed_at,
+            request_headers=_safe_request_headers(request_headers),
         )
 
     def response(self, flow) -> None:
@@ -60,27 +83,57 @@ class PassiveWechatCaptureAddon:
         if not is_allowed_host(host):
             return
 
-        body = getattr(response, "raw_content", b"") or b""
+        body = getattr(response, "content", None)
+        if body is None:
+            body = getattr(response, "raw_content", b"") or b""
+        self.record_response_event(
+            _request_url(request),
+            response_headers=getattr(response, "headers", None),
+            body=body,
+        )
+
+    def record_response_event(
+        self,
+        url: str,
+        *,
+        response_headers,
+        body: bytes,
+    ) -> None:
+        parsed = urlsplit(url)
+        if not is_allowed_host(parsed.hostname or ""):
+            return
+
         if len(body) > self.max_response_body_bytes:
             self.logger.debug(
                 "Ignored oversized WeChat response for %s",
-                redact_url(_request_url(request)),
+                redact_url(url),
             )
             return
 
-        if not _looks_like_json(_header_value(getattr(response, "headers", None), "Content-Type"), body):
+        body = _decode_content_encoding(response_headers, body)
+        if not _looks_like_json(_header_value(response_headers, "Content-Type"), body):
             return
 
         try:
             payload = json.loads(body)
         except (TypeError, ValueError, UnicodeDecodeError):
-            self.logger.debug("Ignored undecodable JSON response for %s", redact_url(_request_url(request)))
+            self.logger.debug(
+                "Ignored undecodable JSON response for %s",
+                redact_url(url),
+            )
             return
 
         self.record_feed_payload(payload)
 
     def record_feed_payload(self, payload) -> None:
-        for candidate in parse_feed_objects(payload):
+        candidates = parse_feed_objects(payload)
+        if not candidates:
+            self.logger.info(
+                "WeChat JSON schema without feed candidate: %s%s",
+                _summarize_payload_schema(payload),
+                _normalized_media_diagnostic(payload),
+            )
+        for candidate in candidates:
             self.matcher.record_feed(candidate)
 
 
@@ -117,7 +170,30 @@ def build_proxy_options(paths: CapturePaths):
 
 def _is_media_path(path: str) -> bool:
     clean_path = urlsplit(str(path or "")).path.lower()
-    return clean_path.endswith(MEDIA_SUFFIXES)
+    return clean_path.endswith(MEDIA_SUFFIXES + MEDIA_PATH_NAMES)
+
+
+def _normalized_media_diagnostic(payload) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    if payload.get("schema") not in {
+        "xiaolou_capture_v1",
+        "xiaolou_capture_active_v1",
+    }:
+        return ""
+
+    parsed = urlsplit(str(payload.get("media_url") or ""))
+    path = parsed.path.lower()
+    if path in {"", "/"}:
+        path_kind = "empty"
+    elif path.endswith(MEDIA_SUFFIXES + MEDIA_PATH_NAMES):
+        path_kind = "known-media"
+    else:
+        path_kind = "extensionless"
+    return (
+        f" normalized_media=scheme:{parsed.scheme or '-'},"
+        f"host:{parsed.hostname or '-'},path:{path_kind}"
+    )
 
 
 def _is_clash_health_check(host: str, path: str) -> bool:
@@ -154,12 +230,76 @@ def _header_value(headers, name: str) -> str | None:
     return None
 
 
+def _decode_content_encoding(headers, body: bytes) -> bytes:
+    encoding = (_header_value(headers, "Content-Encoding") or "").lower()
+    try:
+        if "gzip" in encoding:
+            return gzip.decompress(body)
+        if "deflate" in encoding:
+            return zlib.decompress(body)
+        if "br" in encoding:
+            import brotli
+
+            return brotli.decompress(body)
+    except (ImportError, OSError, ValueError, zlib.error):
+        return body
+    return body
+
+
 def _looks_like_json(content_type: str | None, body: bytes) -> bool:
     if content_type and "json" in content_type.lower():
         return True
 
     stripped = body.lstrip()
     return stripped.startswith(b"{") or stripped.startswith(b"[")
+
+
+def _summarize_payload_schema(payload) -> str:
+    entries: list[str] = []
+
+    def visit(node, path: tuple[str, ...], depth: int) -> None:
+        if depth > 8 or len(entries) >= MAX_SCHEMA_ENTRIES:
+            return
+        if isinstance(node, dict):
+            for raw_key, value in node.items():
+                key = str(raw_key)
+                next_path = path
+                if _is_schema_key(key):
+                    next_path = (*path, key)
+                    entries.append(f"{'.'.join(next_path)}:{_schema_type(value)}")
+                visit(value, next_path, depth + 1)
+                if len(entries) >= MAX_SCHEMA_ENTRIES:
+                    return
+        elif isinstance(node, list):
+            for value in node[:3]:
+                visit(value, path, depth + 1)
+                if len(entries) >= MAX_SCHEMA_ENTRIES:
+                    return
+
+    visit(payload, (), 0)
+    return ",".join(dict.fromkeys(entries)) or "<no relevant fields>"
+
+
+def _is_schema_key(key: str) -> bool:
+    if not key or len(key) > 48 or not key.isascii():
+        return False
+    if key[0] != "_" and not key[0].isalpha():
+        return False
+    return all(character == "_" or character.isalnum() for character in key)
+
+
+def _schema_type(value) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, (int, float)):
+        return "number"
+    return "string"
 
 
 def _ensure_option(proxy_options, name: str, typespec, default, help_text: str, *, choices=None) -> None:

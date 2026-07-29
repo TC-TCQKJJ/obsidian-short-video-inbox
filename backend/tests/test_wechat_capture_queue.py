@@ -453,7 +453,7 @@ class ControlWindowTest(unittest.TestCase):
 
         root.title.assert_called_once_with(APP_TITLE)
         root.resizable.assert_called_once_with(False, False)
-        root.geometry.assert_called_once_with("340x160")
+        root.geometry.assert_called_once_with("400x170")
         root.deiconify.assert_called_once_with()
         self.assertEqual(
             button_constructor.call_args.kwargs["text"],
@@ -533,7 +533,7 @@ class HostLifecycleTest(unittest.TestCase):
                 host.poll_hotkey()
                 host.stop()
 
-            build_proxy_options.assert_called_once_with(paths)
+            build_proxy_options.assert_not_called()
             self.assertEqual(hotkeys.register_calls, [(HOTKEY_MODIFIERS, HOTKEY_VK)])
             self.assertEqual(root.after_calls[0][0], 50)
             coordinator.handle_hotkey.assert_called_once()

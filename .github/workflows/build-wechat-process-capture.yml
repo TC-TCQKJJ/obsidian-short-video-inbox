@@ -1,0 +1,64 @@
+name: Build WeChat process capture
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/wechat_process_capture/**"
+      - ".github/workflows/build-wechat-process-capture.yml"
+  pull_request:
+    paths:
+      - "backend/wechat_process_capture/**"
+      - ".github/workflows/build-wechat-process-capture.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-amd64:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: backend/wechat_process_capture
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.23.x"
+          cache: false
+      - name: Configure MinGW
+        shell: pwsh
+        run: |
+          $gcc = Get-Command gcc.exe -ErrorAction SilentlyContinue
+          if (-not $gcc) {
+            choco install mingw --yes --no-progress
+          }
+          gcc --version
+      - name: Format check
+        shell: pwsh
+        run: |
+          $unformatted = gofmt -l main.go main_test.go
+          if ($unformatted) {
+            Write-Error "Unformatted Go files: $unformatted"
+          }
+      - name: Prepare patched dependency source
+        shell: pwsh
+        run: |
+          go mod download
+          go mod vendor
+          ./patch-sunnynet.ps1
+      - name: Test
+        run: go test -mod=vendor ./...
+      - name: Build
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          go build -mod=vendor -trimpath -ldflags "-s -w" -o dist/wechat-process-capture.exe .
+          ./verify-binary.ps1 -Executable dist/wechat-process-capture.exe
+          (Get-FileHash -Algorithm SHA256 dist/wechat-process-capture.exe).Hash |
+            Set-Content -Encoding ascii dist/wechat-process-capture.exe.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wechat-process-capture-windows-amd64
+          path: backend/wechat_process_capture/dist/*
+          if-no-files-found: error

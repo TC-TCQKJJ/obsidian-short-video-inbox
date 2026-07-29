@@ -16,10 +16,12 @@ EXACT_HOSTS = {
     "finder.video.qq.com",
 }
 ALLOWED_SUFFIXES = (
+    ".finder.video.qq.com",
     ".wxs.qq.com",
     ".wxqcloud.qq.com",
     ".wxlivecdn.com",
 )
+_FINDER_MEDIA_HOST_RE = re.compile(r"^finder[a-z0-9-]*\.video\.qq\.com$")
 _THUMBPRINT_RE = re.compile(r"^[0-9A-F]{40}$")
 
 
@@ -59,14 +61,36 @@ class CapturePaths:
         return self.mitm_dir / "mitmproxy-ca-cert.cer"
 
     @property
+    def ca_pem_path(self) -> Path:
+        return self.mitm_dir / "mitmproxy-ca-cert.pem"
+
+    @property
+    def ca_key_path(self) -> Path:
+        return self.mitm_dir / "mitmproxy-ca.pem"
+
+    @property
     def ca_thumbprint_path(self) -> Path:
         return self.mitm_dir / "ca-thumbprint.txt"
+
+    @property
+    def process_helper_path(self) -> Path:
+        return self.base_dir / "bin" / "wechat-process-capture.exe"
 
 
 def is_allowed_host(host: str) -> bool:
     normalized = str(host or "").strip().rstrip(".").lower()
-    return normalized in EXACT_HOSTS or any(
-        normalized.endswith(suffix) for suffix in ALLOWED_SUFFIXES
+    return (
+        normalized in EXACT_HOSTS
+        or _FINDER_MEDIA_HOST_RE.fullmatch(normalized) is not None
+        or any(normalized.endswith(suffix) for suffix in ALLOWED_SUFFIXES)
+    )
+
+
+def is_media_host(host: str) -> bool:
+    normalized = str(host or "").strip().rstrip(".").lower()
+    return (
+        _FINDER_MEDIA_HOST_RE.fullmatch(normalized) is not None
+        or any(normalized.endswith(suffix) for suffix in ALLOWED_SUFFIXES)
     )
 
 

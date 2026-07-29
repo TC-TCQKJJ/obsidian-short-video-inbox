@@ -5,9 +5,15 @@ $backendPython = Join-Path (Split-Path -Parent $backendRoot) ".venv\Scripts\pyth
 $captureRoot = Join-Path $env:LOCALAPPDATA "Xiaolou\WechatCapture"
 $capturePython = Join-Path $captureRoot "venv\Scripts\python.exe"
 $requirements = Join-Path $PSScriptRoot "requirements.txt"
+$shortcutScript = Join-Path $PSScriptRoot "create-shortcut.ps1"
+$helperSource = Join-Path $backendRoot "wechat_process_capture\dist\wechat-process-capture.exe"
+$helperTarget = Join-Path $captureRoot "bin\wechat-process-capture.exe"
 
 if (-not (Test-Path -LiteralPath $backendPython)) {
     throw "Backend Python was not found: $backendPython"
+}
+if (-not (Test-Path -LiteralPath $helperSource)) {
+    throw "The source-built process capture helper was not found: $helperSource"
 }
 
 New-Item -ItemType Directory -Force -Path $captureRoot | Out-Null
@@ -44,6 +50,9 @@ if ($LASTEXITCODE -ne 0) {
     throw "Failed to restrict the capture directory ACL."
 }
 
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $helperTarget) | Out-Null
+Copy-Item -Force -LiteralPath $helperSource -Destination $helperTarget
+
 $result = & $capturePython -c @"
 from wechat_capture.security import CapturePaths, install_current_user_ca
 print(install_current_user_ca(CapturePaths()))
@@ -57,7 +66,19 @@ if ($thumbprint -notmatch "^[0-9A-F]{40}$") {
     throw "Certificate installation did not return a valid thumbprint."
 }
 
+& powershell.exe `
+    -NoProfile `
+    -ExecutionPolicy Bypass `
+    -File $shortcutScript
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to create the desktop shortcut."
+}
+
+$shortcutName = (-join [char[]](0x5FAE, 0x4FE1, 0x89C6, 0x9891, 0x53F7, 0x6355, 0x83B7)) + ".lnk"
+$desktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) $shortcutName
 Write-Host "Installed the Xiaolou capture CA in CurrentUser\Root."
 Write-Host "CA thumbprint: $thumbprint"
-Write-Host "Capture proxy: 127.0.0.1:2023"
-Write-Host "Next: add clash-extend-script.js to Clash, then run start.ps1."
+Write-Host "Process helper SHA256: $((Get-FileHash -Algorithm SHA256 -LiteralPath $helperTarget).Hash)"
+Write-Host "Capture bridge: 127.0.0.1:2024"
+Write-Host "Desktop shortcut: $desktopShortcut"
+Write-Host "Next: open the desktop shortcut and approve the process-driver prompt."
