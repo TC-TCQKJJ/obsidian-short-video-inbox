@@ -24,7 +24,9 @@ It also creates a `微信视频号捕获` desktop shortcut.
 The UI starts the source-built process helper with a Windows elevation prompt.
 The helper loads this machine's CA, attaches only to `WeChatAppEx.exe`, and
 decrypts only the narrow WeChat Channels host allowlist. Other WeChat traffic
-is forwarded without HTTPS decryption.
+is forwarded without HTTPS decryption. Leaf certificates for the allowlist are
+generated from the per-machine CA at startup, so certificate setup does not
+need a separate probe connection to each remote server.
 
 The helper does not modify the Windows system proxy. When Windows already uses
 a loopback HTTP proxy such as Clash, the helper preserves that route per

@@ -243,6 +243,9 @@ class ProcessCaptureSourceBoundaryTest(unittest.TestCase):
 
         self.assertIn("LoadX509KeyPair", source)
         self.assertIn("sunny.SetCert", source)
+        self.assertIn("configureCaptureCertificates(", source)
+        self.assertIn("manager.LoadX509Certificate(", source)
+        self.assertIn("SunnyNet.HTTPCertRules_Response", source)
         self.assertIn("SetMustTcpRegexp(rules, false)", source)
         self.assertIn("currentLoopbackProxy()", source)
         self.assertIn("conn.SetAgent(sender.upstreamProxy", source)

@@ -50,6 +50,16 @@ var allowedSuffixes = []string{
 	".wxlivecdn.com",
 }
 
+var certificateHosts = []string{
+	"weixin.qq.com",
+	"channels.weixin.qq.com",
+	"finder.video.qq.com",
+	"*.finder.video.qq.com",
+	"*.wxs.qq.com",
+	"*.wxqcloud.qq.com",
+	"*.wxlivecdn.com",
+}
+
 var interceptionRules = strings.Join([]string{
 	"weixin.qq.com",
 	"weixin.qq.com:*",
@@ -154,6 +164,13 @@ func run() error {
 	if sunny.Error != nil {
 		return fmt.Errorf("configure SunnyNet CA: %w", sunny.Error)
 	}
+	if err := configureCaptureCertificates(
+		sunny,
+		paths.certFile,
+		paths.keyFile,
+	); err != nil {
+		return err
+	}
 	rules := interceptionRules
 	proxyURL := ""
 	var proxyTargets []string
@@ -253,6 +270,35 @@ func validateCA(certFile, keyFile string) error {
 	}
 	if time.Now().Before(cert.NotBefore) || time.Now().After(cert.NotAfter) {
 		return errors.New("per-machine CA is outside its validity period")
+	}
+	return nil
+}
+
+func configureCaptureCertificates(
+	sunny *SunnyNet.Sunny,
+	certFile string,
+	keyFile string,
+) error {
+	certPEM, err := os.ReadFile(certFile)
+	if err != nil {
+		return fmt.Errorf("read per-machine CA certificate: %w", err)
+	}
+	keyPEM, err := os.ReadFile(keyFile)
+	if err != nil {
+		return fmt.Errorf("read per-machine CA key: %w", err)
+	}
+	for _, host := range certificateHosts {
+		manager := SunnyNet.NewCertManager()
+		if !manager.LoadX509Certificate(host, string(certPEM), string(keyPEM)) {
+			return fmt.Errorf("generate capture certificate for %s", host)
+		}
+		if !sunny.AddHttpCertificate(
+			host,
+			manager,
+			SunnyNet.HTTPCertRules_Response,
+		) {
+			return fmt.Errorf("register capture certificate for %s", host)
+		}
 	}
 	return nil
 }
@@ -438,6 +484,12 @@ func (sender *eventSender) heartbeat() bridgeEvent {
 
 func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 	rawURL := conn.URL()
+	if conn.Type() == public.HttpRequestFail {
+		if rawURL == "" || isAllowedURL(rawURL) {
+			sender.recordCaptureError(conn.Error())
+		}
+		return
+	}
 	if !isAllowedURL(rawURL) {
 		return
 	}
@@ -475,8 +527,6 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			Headers: headers,
 			Body:    body,
 		})
-	case public.HttpRequestFail:
-		sender.recordCaptureError(conn.Error())
 	}
 }
 
