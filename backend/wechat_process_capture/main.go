@@ -170,6 +170,39 @@ return "";
 function normalizedText(value){
 return String(value||"").replace(/\s+/g," ").trim();
 }
+function visibleVideoScore(video){
+try{
+var style=globalThis.getComputedStyle?
+globalThis.getComputedStyle(video):null;
+if(style&&(style.display==="none"||
+style.visibility==="hidden"||Number(style.opacity)===0))return 0;
+var rect=video.getBoundingClientRect();
+var viewportWidth=globalThis.innerWidth||
+document.documentElement.clientWidth;
+var viewportHeight=globalThis.innerHeight||
+document.documentElement.clientHeight;
+var width=Math.max(0,
+Math.min(rect.right,viewportWidth)-Math.max(rect.left,0));
+var height=Math.max(0,
+Math.min(rect.bottom,viewportHeight)-Math.max(rect.top,0));
+return width*height;
+}catch(error){
+return 0;
+}
+}
+function currentVideo(){
+var current=null;
+var currentScore=0;
+document.querySelectorAll("video").forEach(function(video){
+if(video.paused)return;
+var score=visibleVideoScore(video);
+if(score>currentScore){
+current=video;
+currentScore=score;
+}
+});
+return current;
+}
 function videoContexts(video){
 var contexts=[];
 function addContext(value,limit){
@@ -222,17 +255,17 @@ context_texts:contexts
 }
 globalThis.__xiaolou_capture_video__=captureVideo;
 document.addEventListener("playing",function(event){
-var target=event.target;
-if(!target||String(target.tagName).toLowerCase()!=="video")return;
 [0,300,1000].forEach(function(delay){
-setTimeout(function(){captureVideo(target);},delay);
+setTimeout(function(){
+var video=currentVideo();
+if(video)captureVideo(video);
+},delay);
 });
 },true);
 [0,800,2000].forEach(function(delay){
 setTimeout(function(){
-document.querySelectorAll("video").forEach(function(video){
-if(!video.paused)captureVideo(video);
-});
+var video=currentVideo();
+if(video)captureVideo(video);
 },delay);
 });
 })();`

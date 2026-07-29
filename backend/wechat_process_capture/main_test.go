@@ -100,6 +100,15 @@ func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
 	if strings.Contains(captureVideoBridgeScript, `node.innerText`) {
 		t.Fatal("did not expect hidden ancestor text in active-video contexts")
 	}
+	if !strings.Contains(captureVideoBridgeScript, `visibleVideoScore`) {
+		t.Fatal("expected the active-video bridge to rank visible videos")
+	}
+	if strings.Contains(
+		captureVideoBridgeScript,
+		`if(!video.paused)captureVideo(video)`,
+	) {
+		t.Fatal("did not expect every unpaused preload video to be captured")
+	}
 }
 
 func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {
