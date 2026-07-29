@@ -58,7 +58,7 @@ func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
 		t.Fatal("expected WeChat Channels HTML to be modified")
 	}
 	text := string(modified)
-	if !strings.Contains(text, `app.js?xiaolou_capture=1`) {
+	if !strings.Contains(text, `app.js?xiaolou_capture=`+captureCacheToken) {
 		t.Fatal("expected the script URL to be cache-busted")
 	}
 	if !strings.Contains(text, `src="cover.jpg"`) {
@@ -124,6 +124,27 @@ func TestTargetFeedScriptIsNarrowlyScoped(t *testing.T) {
 		}
 		if isTargetFeedScript(rawURL, "application/javascript") {
 			t.Fatalf("expected unrelated script to be rejected: %s", rawURL)
+		}
+	}
+}
+
+func TestIdentityResponseScopeIsNarrow(t *testing.T) {
+	for _, rawURL := range []string{
+		"https://channels.weixin.qq.com/web/pages/feed",
+		"https://channels.weixin.qq.com/web/pages/home?flow=2",
+		"https://res.wx.qq.com/t/virtual_svg-icons-register.publish.js",
+	} {
+		if !shouldForceIdentityResponse(rawURL) {
+			t.Fatalf("expected identity response for %s", rawURL)
+		}
+	}
+	for _, rawURL := range []string{
+		"https://channels.weixin.qq.com/finder/feed",
+		"https://finder.video.qq.com/video.mp4",
+		"https://res.wx.qq.com/t/unrelated.js",
+	} {
+		if shouldForceIdentityResponse(rawURL) {
+			t.Fatalf("expected normal response handling for %s", rawURL)
 		}
 	}
 }

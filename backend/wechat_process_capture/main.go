@@ -89,6 +89,7 @@ var interceptionRules = strings.Join([]string{
 }, ";")
 
 var (
+	captureCacheToken = fmt.Sprintf("%x", time.Now().UnixNano())
 	htmlScriptPattern = regexp.MustCompile(`(src|href)="([^"]+\.js)"`)
 	jsImportPatterns  = []*regexp.Regexp{
 		regexp.MustCompile(`from {0,1}"([^"]+\.js)"`),
@@ -636,8 +637,12 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			conn.StopRequest(http.StatusOK, []byte("{}"), headers)
 			return
 		}
-		if isTargetFeedScriptURL(rawURL) {
-			conn.GetRequestHeader().Del("Accept-Encoding")
+		if shouldForceIdentityResponse(rawURL) {
+			requestHeader := conn.GetRequestHeader()
+			requestHeader.Del("Accept-Encoding")
+			requestHeader.Del("If-Modified-Since")
+			requestHeader.Del("If-None-Match")
+			requestHeader.Set("Cache-Control", "no-cache")
 		}
 		if sender.upstreamProxy != "" &&
 			!conn.SetAgent(sender.upstreamProxy, 60_000) {
@@ -710,6 +715,18 @@ func isTargetFeedScriptURL(rawURL string) bool {
 		strings.Contains(parsed.Path, "virtual_svg-icons-register.publish")
 }
 
+func shouldForceIdentityResponse(rawURL string) bool {
+	if isTargetFeedScriptURL(rawURL) {
+		return true
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Hostname(), "channels.weixin.qq.com") &&
+		strings.HasPrefix(parsed.Path, "/web/pages/")
+}
+
 func isCaptureFeedURL(rawURL string) bool {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -736,7 +753,7 @@ func instrumentWechatResponse(
 		strings.Contains(loweredContentType, "text/html") {
 		modified := htmlScriptPattern.ReplaceAllString(
 			source,
-			`$1="$2?xiaolou_capture=1"`,
+			`$1="$2?xiaolou_capture=`+captureCacheToken+`"`,
 		)
 		return []byte(modified), modified != source
 	}
@@ -748,10 +765,10 @@ func instrumentWechatResponse(
 
 	modified := source
 	replacements := []string{
-		`from"$1?xiaolou_capture=1"`,
-		`"js/$1?xiaolou_capture=1"`,
-		`import("$1?xiaolou_capture=1")`,
-		`import"$1?xiaolou_capture=1"`,
+		`from"$1?xiaolou_capture=` + captureCacheToken + `"`,
+		`"js/$1?xiaolou_capture=` + captureCacheToken + `"`,
+		`import("$1?xiaolou_capture=` + captureCacheToken + `")`,
+		`import"$1?xiaolou_capture=` + captureCacheToken + `"`,
 	}
 	for index, pattern := range jsImportPatterns {
 		modified = pattern.ReplaceAllString(modified, replacements[index])
