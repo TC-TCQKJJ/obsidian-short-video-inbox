@@ -17,3 +17,4 @@ Security constraints:
 
 The helper requires administrator privileges only for starting the process
 driver. The Python UI launches it through `launch-process-capture.ps1`.
+Source builds use Go 1.23 and MinGW on Windows.

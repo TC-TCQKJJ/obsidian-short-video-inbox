@@ -1,6 +1,6 @@
 module github.com/TC-TCQKJJ/obsidian-short-video-inbox/backend/wechat_process_capture
 
-go 1.20
+go 1.23
 
 require github.com/qtgolang/SunnyNet v1.4.0
 
