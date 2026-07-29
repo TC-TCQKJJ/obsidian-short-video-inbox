@@ -98,8 +98,8 @@ func TestParseLoopbackProxy(t *testing.T) {
 			if proxyURL != test.wantURL {
 				t.Fatalf("parseLoopbackProxy(%q) URL = %q, want %q", test.raw, proxyURL, test.wantURL)
 			}
-			if ok && len(targets) == 0 {
-				t.Fatal("expected at least one interception target")
+			if ok && len(targets) < 2 {
+				t.Fatal("expected host and host:port interception targets")
 			}
 		})
 	}

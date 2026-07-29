@@ -307,9 +307,13 @@ func parseLoopbackProxy(raw string) (string, []string, bool) {
 		return "", nil, false
 	}
 
-	targets := []string{net.JoinHostPort(host, port)}
+	targets := []string{host, net.JoinHostPort(host, port)}
 	if host == "localhost" {
-		targets = append(targets, net.JoinHostPort("127.0.0.1", port))
+		targets = append(
+			targets,
+			"127.0.0.1",
+			net.JoinHostPort("127.0.0.1", port),
+		)
 	}
 	return "http://" + net.JoinHostPort(host, port), targets, true
 }
