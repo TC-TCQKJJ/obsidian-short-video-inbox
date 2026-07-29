@@ -229,7 +229,9 @@ class ProcessCaptureSourceBoundaryTest(unittest.TestCase):
 
         self.assertIn("LoadX509KeyPair", source)
         self.assertIn("sunny.SetCert", source)
-        self.assertIn("SetMustTcpRegexp(interceptionRules, false)", source)
+        self.assertIn("SetMustTcpRegexp(rules, false)", source)
+        self.assertIn("currentLoopbackProxy()", source)
+        self.assertIn("sunny.SetGlobalProxy(proxyURL", source)
         self.assertIn('ProcessAddName(processName)', source)
         self.assertIn('"WeChatAppEx.exe"', source)
         self.assertIn('"finder.video.qq.com:*"', source)
@@ -247,7 +249,7 @@ class ProcessCaptureSourceBoundaryTest(unittest.TestCase):
         self.assertIn("if !sunny.OpenDrive(0)", source)
         self.assertIn("sunny.Close()", source)
         self.assertIn("process driver failed to start", source)
-        self.assertNotIn("system proxy", source.lower())
+        self.assertIn("registry.CURRENT_USER", source)
 
     def test_launcher_uses_hidden_elevated_process(self):
         source = LAUNCH_SCRIPT.read_text(encoding="utf-8")

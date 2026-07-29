@@ -57,3 +57,50 @@ func TestLooksLikeJSON(t *testing.T) {
 		t.Fatal("did not expect binary body to be accepted")
 	}
 }
+
+func TestParseLoopbackProxy(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		wantURL string
+		wantOK  bool
+	}{
+		{
+			name:    "single mixed proxy",
+			raw:     "127.0.0.1:7897",
+			wantURL: "http://127.0.0.1:7897",
+			wantOK:  true,
+		},
+		{
+			name:    "protocol-specific proxy",
+			raw:     "http=127.0.0.1:8080;https=127.0.0.1:7897",
+			wantURL: "http://127.0.0.1:7897",
+			wantOK:  true,
+		},
+		{
+			name:   "remote proxy is rejected",
+			raw:    "proxy.example.com:8080",
+			wantOK: false,
+		},
+		{
+			name:   "credentials are rejected",
+			raw:    "http://user:secret@127.0.0.1:7897",
+			wantOK: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			proxyURL, targets, ok := parseLoopbackProxy(test.raw)
+			if ok != test.wantOK {
+				t.Fatalf("parseLoopbackProxy(%q) ok = %v, want %v", test.raw, ok, test.wantOK)
+			}
+			if proxyURL != test.wantURL {
+				t.Fatalf("parseLoopbackProxy(%q) URL = %q, want %q", test.raw, proxyURL, test.wantURL)
+			}
+			if ok && len(targets) == 0 {
+				t.Fatal("expected at least one interception target")
+			}
+		})
+	}
+}

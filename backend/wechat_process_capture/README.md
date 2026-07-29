@@ -12,6 +12,9 @@ Security constraints:
   listener.
 - Only the explicit WeChat Channels host allowlist is decrypted. Other traffic
   from the WeChat process is forwarded as raw TCP.
+- If a loopback system proxy is enabled, it is parsed only as the outer tunnel
+  and retained as SunnyNet's upstream. Remote or credentialed proxies are not
+  accepted by this compatibility path.
 - Only safe request headers are sent to the Python matcher.
 - Driver startup failure is fatal; there is no fallback to a system proxy.
 

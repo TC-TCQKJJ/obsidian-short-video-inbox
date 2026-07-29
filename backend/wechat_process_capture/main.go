@@ -25,6 +25,7 @@ import (
 	"github.com/qtgolang/SunnyNet/SunnyNet"
 	sunnyHTTP "github.com/qtgolang/SunnyNet/src/http"
 	"github.com/qtgolang/SunnyNet/src/public"
+	"golang.org/x/sys/windows/registry"
 )
 
 const (
@@ -147,7 +148,14 @@ func run() error {
 	if sunny.Error != nil {
 		return fmt.Errorf("configure SunnyNet CA: %w", sunny.Error)
 	}
-	if err := sunny.SetMustTcpRegexp(interceptionRules, false); err != nil {
+	rules := interceptionRules
+	if proxyURL, proxyTargets, ok := currentLoopbackProxy(); ok {
+		rules += ";" + strings.Join(proxyTargets, ";")
+		if !sunny.SetGlobalProxy(proxyURL, 60_000) {
+			return errors.New("configure loopback system proxy as SunnyNet upstream")
+		}
+	}
+	if err := sunny.SetMustTcpRegexp(rules, false); err != nil {
 		return fmt.Errorf("configure narrow interception rules: %w", err)
 	}
 
@@ -240,6 +248,70 @@ func validateCA(certFile, keyFile string) error {
 		return errors.New("per-machine CA is outside its validity period")
 	}
 	return nil
+}
+
+func currentLoopbackProxy() (string, []string, bool) {
+	key, err := registry.OpenKey(
+		registry.CURRENT_USER,
+		`Software\Microsoft\Windows\CurrentVersion\Internet Settings`,
+		registry.QUERY_VALUE,
+	)
+	if err != nil {
+		return "", nil, false
+	}
+	defer key.Close()
+
+	enabled, _, err := key.GetIntegerValue("ProxyEnable")
+	if err != nil || enabled != 1 {
+		return "", nil, false
+	}
+	raw, _, err := key.GetStringValue("ProxyServer")
+	if err != nil {
+		return "", nil, false
+	}
+	return parseLoopbackProxy(raw)
+}
+
+func parseLoopbackProxy(raw string) (string, []string, bool) {
+	candidate := strings.TrimSpace(raw)
+	if strings.Contains(candidate, "=") {
+		values := make(map[string]string)
+		for _, entry := range strings.Split(candidate, ";") {
+			name, value, found := strings.Cut(entry, "=")
+			if found {
+				values[strings.ToLower(strings.TrimSpace(name))] = strings.TrimSpace(value)
+			}
+		}
+		candidate = values["https"]
+		if candidate == "" {
+			candidate = values["http"]
+		}
+	}
+	if candidate == "" {
+		return "", nil, false
+	}
+	if !strings.Contains(candidate, "://") {
+		candidate = "http://" + candidate
+	}
+	parsed, err := url.Parse(candidate)
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil {
+		return "", nil, false
+	}
+	port := parsed.Port()
+	if port == "" {
+		return "", nil, false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	ip := net.ParseIP(host)
+	if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return "", nil, false
+	}
+
+	targets := []string{net.JoinHostPort(host, port)}
+	if host == "localhost" {
+		targets = append(targets, net.JoinHostPort("127.0.0.1", port))
+	}
+	return "http://" + net.JoinHostPort(host, port), targets, true
 }
 
 func newBridgeClient(token string) *bridgeClient {
