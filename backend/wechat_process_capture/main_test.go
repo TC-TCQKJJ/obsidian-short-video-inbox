@@ -94,6 +94,12 @@ func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
 	if !strings.Contains(captureVideoBridgeScript, `context_texts:`) {
 		t.Fatal("expected the active-video bridge to send DOM contexts")
 	}
+	if !strings.Contains(captureVideoBridgeScript, `document.createTreeWalker`) {
+		t.Fatal("expected the active-video bridge to inspect visible text nodes")
+	}
+	if strings.Contains(captureVideoBridgeScript, `node.innerText`) {
+		t.Fatal("did not expect hidden ancestor text in active-video contexts")
+	}
 }
 
 func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {

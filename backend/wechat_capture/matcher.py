@@ -4,6 +4,7 @@ import dataclasses
 import logging
 import threading
 import time
+import unicodedata
 from urllib.parse import urlparse
 
 from wechat_capture.model import CaptureCandidate
@@ -187,7 +188,8 @@ class CaptureMatcher:
     def _match_active_context_locked(self) -> None:
         if not self._active_contexts:
             return
-        for context in self._active_contexts:
+        contexts = (*self._active_contexts, " ".join(self._active_contexts))
+        for context in contexts:
             matches = [
                 (identity, candidate)
                 for identity, candidate in self._feeds_by_media.items()
@@ -225,16 +227,24 @@ def _candidate_matches_context(
     candidate: CaptureCandidate,
     context: str,
 ) -> bool:
-    normalized_context = _normalized_text(context)
+    normalized_context = _searchable_text(context)
     signals = (
-        _normalized_text(candidate.title),
-        _normalized_text(candidate.author),
+        _searchable_text(candidate.title),
+        _searchable_text(candidate.author),
     )
-    return any(len(signal) >= 2 and signal in normalized_context for signal in signals)
+    return any(len(signal) >= 3 and signal in normalized_context for signal in signals)
 
 
 def _normalized_text(value: str) -> str:
     return " ".join(str(value or "").split())
+
+
+def _searchable_text(value: str) -> str:
+    return "".join(
+        character.casefold()
+        for character in unicodedata.normalize("NFKC", _normalized_text(value))
+        if character.isalnum()
+    )
 
 
 def _path_name(path: str) -> str:

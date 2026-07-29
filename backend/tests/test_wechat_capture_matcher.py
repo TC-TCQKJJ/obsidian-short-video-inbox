@@ -600,6 +600,46 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
             ["feed-target"],
         )
 
+    def test_active_mode_matches_title_split_across_visible_text_nodes(self):
+        matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
+        target = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-target",
+                "title": "姜哥有话说，#我们万岁",
+                "author": "非常姜老板",
+                "media_url": "https://findera4.video.qq.com/target",
+            }
+        )[0]
+        preload = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-preload",
+                "title": "从未看过的视频",
+                "author": "其他作者",
+                "media_url": "https://findera4.video.qq.com/preload",
+            }
+        )[0]
+        matcher.record_feed(target)
+        matcher.record_feed(preload)
+        matcher.record_feed(
+            parse_feed_objects(
+                {
+                    "schema": "xiaolou_capture_active_v1",
+                    "context_texts": [
+                        "姜哥有话说，",
+                        "#我们万岁",
+                        "非常姜老板",
+                    ],
+                }
+            )[0]
+        )
+
+        self.assertEqual(
+            [item.capture_id for item in matcher.recent_candidates()],
+            ["feed-target"],
+        )
+
     def test_active_mode_rejects_ambiguous_dom_context(self):
         matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
         for capture_id, title in (

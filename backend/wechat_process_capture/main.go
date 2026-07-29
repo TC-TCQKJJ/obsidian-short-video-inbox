@@ -179,11 +179,6 @@ contexts.push(text.slice(0,4096));
 }
 }
 try{
-for(var node=video,depth=0;
-node&&depth<32&&contexts.length<16;
-node=node.parentElement,depth++){
-addContext(node.innerText||node.textContent,8192);
-}
 var videoRect=video.getBoundingClientRect();
 var viewportHeight=globalThis.innerHeight||
 document.documentElement.clientHeight;
