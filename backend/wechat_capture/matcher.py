@@ -32,7 +32,8 @@ class CaptureMatcher:
             tuple[str, dict[str, str], float],
         ] = {}
         self._matched: dict[tuple[str, str], CaptureCandidate] = {}
-        self._active_identity: tuple[str, str] | None = None
+        self._active_capture_id: str | None = None
+        self._active_observed_at = 0.0
 
     @property
     def feed_count(self) -> int:
@@ -41,14 +42,15 @@ class CaptureMatcher:
             return len(self._feeds_by_media)
 
     def record_feed(self, candidate: CaptureCandidate) -> None:
-        identity = _media_identity(candidate.media_url)
-        if not identity[0] or not identity[1]:
-            return
         with self._lock:
             self._prune_locked(now=candidate.observed_at)
-            self._feeds_by_media[identity] = candidate
             if candidate.is_active:
-                self._active_identity = identity
+                self._active_capture_id = candidate.capture_id
+                self._active_observed_at = candidate.observed_at
+            identity = _media_identity(candidate.media_url)
+            if not identity[0] or not identity[1]:
+                return
+            self._feeds_by_media[identity] = candidate
             observation = self._recent_media.get(identity)
             if observation is not None:
                 media_url, request_headers, observed_at = observation
@@ -85,10 +87,33 @@ class CaptureMatcher:
         with self._lock:
             self._prune_locked(now=time.time())
             if self.require_active:
-                if self._active_identity is None:
+                if self._active_capture_id is None:
+                    self.logger.info(
+                        "WeChat active feed diagnostics: active=0 feeds=%d "
+                        "media=%d matched=%d",
+                        len(self._feeds_by_media),
+                        len(self._recent_media),
+                        len(self._matched),
+                    )
                     return []
-                candidate = self._matched.get(self._active_identity)
-                return [candidate] if candidate is not None else []
+                candidates = sorted(
+                    (
+                        candidate
+                        for candidate in self._matched.values()
+                        if candidate.capture_id == self._active_capture_id
+                    ),
+                    key=lambda item: item.observed_at,
+                    reverse=True,
+                )
+                if not candidates:
+                    self.logger.info(
+                        "WeChat active feed diagnostics: active=1 feeds=%d "
+                        "media=%d matched=%d active_matched=0",
+                        len(self._feeds_by_media),
+                        len(self._recent_media),
+                        len(self._matched),
+                    )
+                return candidates[:1]
             candidates = sorted(
                 self._matched.values(),
                 key=lambda item: item.observed_at,
@@ -127,11 +152,9 @@ class CaptureMatcher:
             for identity, observation in self._recent_media.items()
             if observation[2] >= cutoff
         }
-        if (
-            self._active_identity is not None
-            and self._active_identity not in self._feeds_by_media
-        ):
-            self._active_identity = None
+        if self._active_observed_at < cutoff:
+            self._active_capture_id = None
+            self._active_observed_at = 0.0
 
 
 def _path_name(path: str) -> str:

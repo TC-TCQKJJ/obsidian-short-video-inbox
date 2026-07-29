@@ -164,13 +164,13 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
         payload = {
             "schema": "xiaolou_capture_active_v1",
             "capture_id": "feed-active",
-            "media_url": "https://wxsmw.wxs.qq.com/video/active",
         }
 
         items = parse_feed_objects(payload)
 
         self.assertEqual(len(items), 1)
         self.assertTrue(items[0].is_active)
+        self.assertEqual(items[0].media_url, "")
 
     def test_normalized_instrumentation_matches_observed_media_request(self):
         payload = {
@@ -392,6 +392,28 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
             [item.capture_id for item in matcher.recent_candidates()],
             ["feed-object-456"],
         )
+
+    def test_active_mode_joins_current_feed_to_media_by_capture_id(self):
+        matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
+        preload = parse_feed_objects({"object": FEED})[0]
+        matcher.record_feed(preload)
+        matcher.record_media_request(
+            preload.media_url,
+            observed_at=time.time(),
+        )
+        active = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_active_v1",
+                "capture_id": preload.capture_id,
+                "media_url": "https://wx.qlogo.cn/avatar/not-video",
+            }
+        )[0]
+
+        matcher.record_feed(active)
+
+        matches = matcher.recent_candidates()
+        self.assertEqual([item.capture_id for item in matches], ["feed-123"])
+        self.assertIn("wxs.qq.com", matches[0].media_url)
 
     def test_recent_candidates_prunes_entries_older_than_max_age(self):
         matcher = CaptureMatcher(max_age_seconds=10)

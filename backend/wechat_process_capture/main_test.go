@@ -115,6 +115,7 @@ func TestInstrumentWechatInteractionFeedAndCurrentItem(t *testing.T) {
 		`globalThis.__xiaolou_capture_feed__`,
 		`this.currentFeed,true`,
 		`xiaolou_capture_active_v1`,
+		`media_url:__xiaolou_active__?"":__xiaolou_url__`,
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("expected current-feed instrumentation to contain %q", expected)

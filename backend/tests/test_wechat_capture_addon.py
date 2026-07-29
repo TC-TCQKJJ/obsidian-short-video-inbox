@@ -164,6 +164,30 @@ class WechatCaptureAddonTest(unittest.TestCase):
         self.assertNotIn("finder.video.qq.com", captured.output[0])
         self.assertNotIn("LEAKED_KEY", captured.output[0])
 
+    def test_rejected_normalized_feed_logs_only_safe_media_shape(self):
+        matcher = CaptureMatcher(max_age_seconds=30)
+        logger = self._build_logger()
+        addon = self._build_addon(matcher, logger=logger)
+
+        with self.assertLogs(logger, level="INFO") as captured:
+            addon.record_feed_payload(
+                {
+                    "schema": "xiaolou_capture_v1",
+                    "capture_id": "LEAKED_ID",
+                    "media_url": (
+                        "https://unexpected.example/private/video"
+                        "?token=LEAKED_TOKEN"
+                    ),
+                }
+            )
+
+        message = captured.output[0]
+        self.assertIn("host:unexpected.example", message)
+        self.assertIn("path:extensionless", message)
+        self.assertNotIn("LEAKED_ID", message)
+        self.assertNotIn("private/video", message)
+        self.assertNotIn("LEAKED_TOKEN", message)
+
     def test_non_json_binary_response_is_ignored_without_modifying_response(self):
         matcher = CaptureMatcher(max_age_seconds=30)
         addon = self._build_addon(matcher)

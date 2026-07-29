@@ -129,8 +129,9 @@ class PassiveWechatCaptureAddon:
         candidates = parse_feed_objects(payload)
         if not candidates:
             self.logger.info(
-                "WeChat JSON schema without feed candidate: %s",
+                "WeChat JSON schema without feed candidate: %s%s",
                 _summarize_payload_schema(payload),
+                _normalized_media_diagnostic(payload),
             )
         for candidate in candidates:
             self.matcher.record_feed(candidate)
@@ -170,6 +171,29 @@ def build_proxy_options(paths: CapturePaths):
 def _is_media_path(path: str) -> bool:
     clean_path = urlsplit(str(path or "")).path.lower()
     return clean_path.endswith(MEDIA_SUFFIXES + MEDIA_PATH_NAMES)
+
+
+def _normalized_media_diagnostic(payload) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    if payload.get("schema") not in {
+        "xiaolou_capture_v1",
+        "xiaolou_capture_active_v1",
+    }:
+        return ""
+
+    parsed = urlsplit(str(payload.get("media_url") or ""))
+    path = parsed.path.lower()
+    if path in {"", "/"}:
+        path_kind = "empty"
+    elif path.endswith(MEDIA_SUFFIXES + MEDIA_PATH_NAMES):
+        path_kind = "known-media"
+    else:
+        path_kind = "extensionless"
+    return (
+        f" normalized_media=scheme:{parsed.scheme or '-'},"
+        f"host:{parsed.hostname or '-'},path:{path_kind}"
+    )
 
 
 def _is_clash_health_check(host: str, path: str) -> bool:
