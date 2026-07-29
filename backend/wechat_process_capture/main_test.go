@@ -115,6 +115,12 @@ func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
 	if strings.Contains(captureVideoBridgeScript, `videoSource`) {
 		t.Fatal("did not expect player source probing in active DOM matching")
 	}
+	if !strings.Contains(captureVideoBridgeScript, `document.elementFromPoint`) {
+		t.Fatal("expected occluded preload cards to be excluded")
+	}
+	if !strings.Contains(captureVideoBridgeScript, `visibleStyle(parent)`) {
+		t.Fatal("expected hidden text ancestors to be excluded")
+	}
 }
 
 func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {

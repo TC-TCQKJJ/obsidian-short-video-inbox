@@ -125,12 +125,44 @@ const (
 function normalizedText(value){
 return String(value||"").replace(/\s+/g," ").trim();
 }
+function visibleStyle(element){
+try{
+for(var node=element;node&&node!==document.body;
+node=node.parentElement){
+var style=globalThis.getComputedStyle?
+globalThis.getComputedStyle(node):null;
+if(style&&(style.display==="none"||
+style.visibility==="hidden"||Number(style.opacity)===0))return false;
+}
+return true;
+}catch(error){
+return false;
+}
+}
+function topElementBelongsTo(element,rect,allowParent){
+try{
+if(!document.elementFromPoint)return true;
+var viewportWidth=globalThis.innerWidth||
+document.documentElement.clientWidth;
+var viewportHeight=globalThis.innerHeight||
+document.documentElement.clientHeight;
+var x=Math.max(0,Math.min(viewportWidth-1,
+rect.left+rect.width/2));
+var y=Math.max(0,Math.min(viewportHeight-1,
+rect.top+rect.height/2));
+var topElement=document.elementFromPoint(x,y);
+if(!topElement)return false;
+if(topElement===element||element.contains(topElement)||
+topElement.contains(element))return true;
+return Boolean(allowParent&&element.parentElement&&
+element.parentElement.contains(topElement));
+}catch(error){
+return false;
+}
+}
 function visibleVideoScore(video){
 try{
-var style=globalThis.getComputedStyle?
-globalThis.getComputedStyle(video):null;
-if(style&&(style.display==="none"||
-style.visibility==="hidden"||Number(style.opacity)===0))return 0;
+if(!visibleStyle(video))return 0;
 var rect=video.getBoundingClientRect();
 var viewportWidth=globalThis.innerWidth||
 document.documentElement.clientWidth;
@@ -140,6 +172,8 @@ var width=Math.max(0,
 Math.min(rect.right,viewportWidth)-Math.max(rect.left,0));
 var height=Math.max(0,
 Math.min(rect.bottom,viewportHeight)-Math.max(rect.top,0));
+if(width===0||height===0||
+!topElementBelongsTo(video,rect,true))return 0;
 return width*height;
 }catch(error){
 return 0;
@@ -179,11 +213,15 @@ textNode&&contexts.length<32;
 textNode=walker.nextNode()){
 var text=normalizedText(textNode.nodeValue);
 if(text.length<2||text.length>512)continue;
+var parent=textNode.parentElement;
+if(!parent||!visibleStyle(parent))continue;
 range.selectNodeContents(textNode);
-var rect=range.getBoundingClientRect();
+var rects=range.getClientRects();
+var rect=rects.length?rects[0]:range.getBoundingClientRect();
 if(rect.width<=0||rect.height<=0||
 rect.bottom<minTop||rect.top>maxTop||
-rect.bottom<=0||rect.top>=viewportHeight)continue;
+rect.bottom<=0||rect.top>=viewportHeight||
+!topElementBelongsTo(parent,rect,false))continue;
 addContext(text,512);
 }
 }catch(error){}
