@@ -118,7 +118,7 @@ def _normalized_context_texts(value) -> tuple[str, ...]:
         return ()
 
     texts: list[str] = []
-    for item in value[:16]:
+    for item in value[:32]:
         if not isinstance(item, str):
             continue
         text = " ".join(item.split())[:4096]
