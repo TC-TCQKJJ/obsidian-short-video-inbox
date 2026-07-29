@@ -122,6 +122,9 @@ type bridgeEvent struct {
 	LastError     string            `json:"last_capture_error,omitempty"`
 	RequestCount  uint64            `json:"request_count,omitempty"`
 	ResponseCount uint64            `json:"response_count,omitempty"`
+	TargetScripts uint64            `json:"target_script_count,omitempty"`
+	Instrumented  uint64            `json:"instrumented_script_count,omitempty"`
+	FeedMetadata  uint64            `json:"feed_metadata_count,omitempty"`
 	DroppedCount  uint64            `json:"dropped_count,omitempty"`
 	FailedCount   uint64            `json:"failed_count,omitempty"`
 }
@@ -147,6 +150,9 @@ type eventSender struct {
 	lastError       atomic.Value
 	requestCount    atomic.Uint64
 	responseCount   atomic.Uint64
+	targetScripts   atomic.Uint64
+	instrumented    atomic.Uint64
+	feedMetadata    atomic.Uint64
 	droppedCount    atomic.Uint64
 	failedCount     atomic.Uint64
 }
@@ -577,6 +583,9 @@ func (sender *eventSender) heartbeat() bridgeEvent {
 		LastError:     lastError,
 		RequestCount:  sender.requestCount.Load(),
 		ResponseCount: sender.responseCount.Load(),
+		TargetScripts: sender.targetScripts.Load(),
+		Instrumented:  sender.instrumented.Load(),
+		FeedMetadata:  sender.feedMetadata.Load(),
 		DroppedCount:  sender.droppedCount.Load(),
 		FailedCount:   sender.failedCount.Load(),
 	}
@@ -610,6 +619,7 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 		if isCaptureFeedURL(rawURL) {
 			body := conn.GetRequestBody()
 			if len(body) > 0 && len(body) <= maxResponseBodySize && json.Valid(body) {
+				sender.feedMetadata.Add(1)
 				sender.enqueue(bridgeEvent{
 					Type: "response",
 					URL:  rawURL,
@@ -643,16 +653,25 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			ObservedAt: float64(time.Now().UnixNano()) / 1e9,
 		})
 	case public.HttpResponseOK:
+		headers := responseHeaders(conn.GetResponseHeader())
+		targetScript := isTargetFeedScript(rawURL, headers["Content-Type"])
+		if targetScript {
+			sender.targetScripts.Add(1)
+		}
 		body := conn.GetResponseBody()
 		if len(body) == 0 || len(body) > maxResponseBodySize {
 			return
 		}
-		headers := responseHeaders(conn.GetResponseHeader())
 		if modifiedBody, modified := instrumentWechatResponse(
 			rawURL,
 			headers["Content-Type"],
 			body,
 		); modified {
+			if targetScript &&
+				!bytes.Contains(body, []byte(captureFeedPath)) &&
+				bytes.Contains(modifiedBody, []byte(captureFeedPath)) {
+				sender.instrumented.Add(1)
+			}
 			responseHeader := conn.GetResponseHeader()
 			responseHeader.Del("Content-Encoding")
 			responseHeader.Del("Content-Length")
@@ -669,6 +688,19 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			Body:    body,
 		})
 	}
+}
+
+func isTargetFeedScript(rawURL string, contentType string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Hostname(), "res.wx.qq.com") &&
+		strings.Contains(
+			strings.ToLower(contentType),
+			"javascript",
+		) &&
+		strings.Contains(parsed.Path, "virtual_svg-icons-register.publish")
 }
 
 func isCaptureFeedURL(rawURL string) bool {

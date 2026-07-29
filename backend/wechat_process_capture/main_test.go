@@ -68,8 +68,12 @@ func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
 
 func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {
 	body := []byte(`async finderGetCommentDetail(e){return await api(e)}async next(){}`)
+	rawURL := "https://res.wx.qq.com/t/wx_fed/finder/web/web-finder/res/js/virtual_svg-icons-register.publish.js"
+	if !isTargetFeedScript(rawURL, "application/javascript") {
+		t.Fatal("expected the WeChat API script to be recognized")
+	}
 	modified, ok := instrumentWechatResponse(
-		"https://res.wx.qq.com/t/wx_fed/finder/web/web-finder/res/js/virtual_svg-icons-register.publish.js",
+		rawURL,
 		"application/javascript",
 		body,
 	)
@@ -85,6 +89,35 @@ func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("expected instrumented script to contain %q", expected)
+		}
+	}
+}
+
+func TestTargetFeedScriptIsNarrowlyScoped(t *testing.T) {
+	for _, testCase := range []struct {
+		rawURL      string
+		contentType string
+	}{
+		{
+			rawURL:      "https://res.wx.qq.com/t/virtual_svg-icons-register.publish.js",
+			contentType: "application/javascript",
+		},
+		{
+			rawURL:      "https://res.wx.qq.com/t/virtual_svg-icons-register.publish.js",
+			contentType: "text/javascript",
+		},
+	} {
+		if !isTargetFeedScript(testCase.rawURL, testCase.contentType) {
+			t.Fatalf("expected target script: %s", testCase.rawURL)
+		}
+	}
+	for _, rawURL := range []string{
+		"https://res.wx.qq.com/t/unrelated.publish.js",
+		"https://channels.weixin.qq.com/t/virtual_svg-icons-register.publish.js",
+		"https://res.wx.qq.com.evil.example/t/virtual_svg-icons-register.publish.js",
+	} {
+		if isTargetFeedScript(rawURL, "application/javascript") {
+			t.Fatalf("expected unrelated script to be rejected: %s", rawURL)
 		}
 	}
 }

@@ -118,6 +118,9 @@ class ProcessCaptureEventProcessorTest(unittest.TestCase):
                 "state": "heartbeat",
                 "request_count": 2,
                 "response_count": 1,
+                "target_script_count": 1,
+                "instrumented_script_count": 1,
+                "feed_metadata_count": 1,
                 "dropped_count": 0,
                 "failed_count": 0,
             }
@@ -125,6 +128,29 @@ class ProcessCaptureEventProcessorTest(unittest.TestCase):
 
         self.assertIn("请求 2", self.processor.diagnostic_text())
         self.assertIn("信息 1", self.processor.diagnostic_text())
+
+    def test_heartbeat_reports_target_script_instrumentation_stage(self):
+        self.processor.handle({"type": "status", "state": "driver_ready"})
+        self.processor.handle(
+            {
+                "type": "status",
+                "state": "heartbeat",
+                "request_count": 2,
+                "target_script_count": 1,
+            }
+        )
+        self.assertIn("脚本未能改写", self.processor.diagnostic_text())
+
+        self.processor.handle(
+            {
+                "type": "status",
+                "state": "heartbeat",
+                "request_count": 2,
+                "target_script_count": 1,
+                "instrumented_script_count": 1,
+            }
+        )
+        self.assertIn("等待页面回传", self.processor.diagnostic_text())
 
     def test_heartbeat_distinguishes_raw_and_decrypted_traffic(self):
         self.processor.handle({"type": "status", "state": "driver_ready"})

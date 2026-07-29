@@ -44,9 +44,12 @@ class ProcessCaptureEventProcessor:
         self._last_capture_error = ""
         self._request_events = 0
         self._response_events = 0
+        self._target_scripts = 0
+        self._instrumented_scripts = 0
+        self._feed_metadata = 0
         self._dropped_events = 0
         self._failed_events = 0
-        self._last_logged_metrics = (0, 0, 0, 0, 0, 0, 0)
+        self._last_logged_metrics = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
     def authenticate(self, authorization: str | None) -> bool:
         expected = f"Bearer {self.token}"
@@ -105,6 +108,9 @@ class ProcessCaptureEventProcessor:
             capture_errors = self._capture_errors
             requests = self._request_events
             responses = self._response_events
+            target_scripts = self._target_scripts
+            instrumented_scripts = self._instrumented_scripts
+            feed_metadata = self._feed_metadata
             dropped = self._dropped_events
             failed = self._failed_events
 
@@ -125,8 +131,18 @@ class ProcessCaptureEventProcessor:
         if http == 0 and requests == 0 and responses == 0:
             return f"已接管微信流量：原始连接 {tcp}，尚未解密视频号 HTTP"
         if requests == 0 and responses == 0:
+            if target_scripts and not instrumented_scripts:
+                return "已收到微信目标脚本，但未能改写，当前版本可能不兼容"
+            if instrumented_scripts and not feed_metadata:
+                return "微信目标脚本已改写，等待页面回传视频信息"
             return f"已解密 {http} 个视频号 HTTP 请求，等待媒体链接"
         if responses == 0:
+            if target_scripts == 0:
+                return f"已检测到 {requests} 个视频请求，尚未收到微信目标脚本"
+            if instrumented_scripts == 0:
+                return "已检测到视频请求，但微信目标脚本未能改写"
+            if feed_metadata == 0:
+                return "微信目标脚本已改写，等待页面回传视频信息"
             return f"已检测到 {requests} 个视频请求，等待视频信息"
         return f"已检测到视频号数据：请求 {requests}，信息 {responses}"
 
@@ -144,6 +160,9 @@ class ProcessCaptureEventProcessor:
             _optional_count(event.get("capture_error_count")),
             _optional_count(event.get("request_count")),
             _optional_count(event.get("response_count")),
+            _optional_count(event.get("target_script_count")),
+            _optional_count(event.get("instrumented_script_count")),
+            _optional_count(event.get("feed_metadata_count")),
             _optional_count(event.get("dropped_count")),
             _optional_count(event.get("failed_count")),
         )
@@ -153,8 +172,14 @@ class ProcessCaptureEventProcessor:
             self._capture_errors = max(self._capture_errors, metrics[2])
             self._request_events = max(self._request_events, metrics[3])
             self._response_events = max(self._response_events, metrics[4])
-            self._dropped_events = max(self._dropped_events, metrics[5])
-            self._failed_events = max(self._failed_events, metrics[6])
+            self._target_scripts = max(self._target_scripts, metrics[5])
+            self._instrumented_scripts = max(
+                self._instrumented_scripts,
+                metrics[6],
+            )
+            self._feed_metadata = max(self._feed_metadata, metrics[7])
+            self._dropped_events = max(self._dropped_events, metrics[8])
+            self._failed_events = max(self._failed_events, metrics[9])
             last_capture_error = event.get("last_capture_error")
             if isinstance(last_capture_error, str) and last_capture_error:
                 self._last_capture_error = last_capture_error
@@ -173,7 +198,8 @@ class ProcessCaptureEventProcessor:
         if changed:
             self.logger.info(
                 "WeChat process capture counters: tcp=%d http=%d capture_errors=%d "
-                "requests=%d responses=%d dropped=%d failed=%d",
+                "requests=%d responses=%d target_scripts=%d instrumented=%d "
+                "feed_metadata=%d dropped=%d failed=%d",
                 *current,
             )
             if self._last_capture_error:
