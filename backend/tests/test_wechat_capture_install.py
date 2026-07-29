@@ -47,12 +47,13 @@ class WechatCaptureInstallTest(unittest.TestCase):
         text = (ROOT / "install.ps1").read_text(encoding="utf-8")
         shortcut = (ROOT / "create-shortcut.ps1").read_text(encoding="utf-8")
 
-        self.assertIn("微信视频号捕获.lnk", text)
         self.assertIn("create-shortcut.ps1", text)
         self.assertIn("WScript.Shell", shortcut)
+        self.assertIn("0x5FAE", shortcut)
+        self.assertIn(' + ".lnk"', shortcut)
         self.assertIn('EndsWith(".lnk"', shortcut)
-        self.assertIn("-WindowStyle Hidden", text)
-        self.assertIn("start.ps1", text)
+        self.assertIn("-WindowStyle Hidden", shortcut)
+        self.assertIn("start.ps1", shortcut)
 
 
 if __name__ == "__main__":

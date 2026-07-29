@@ -1,17 +1,10 @@
-param(
-    [Parameter(Mandatory = $true)]
-    [string]$ShortcutPath,
-    [Parameter(Mandatory = $true)]
-    [string]$TargetPath,
-    [Parameter(Mandatory = $true)]
-    [string]$Arguments,
-    [Parameter(Mandatory = $true)]
-    [string]$WorkingDirectory
-)
-
 $ErrorActionPreference = "Stop"
 
-$shortcutPath = [IO.Path]::GetFullPath($ShortcutPath)
+$backendRoot = Split-Path -Parent $PSScriptRoot
+$startScript = Join-Path $PSScriptRoot "start.ps1"
+$shortcutName = (-join [char[]](0x5FAE, 0x4FE1, 0x89C6, 0x9891, 0x53F7, 0x6355, 0x83B7)) + ".lnk"
+$shortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) $shortcutName
+$shortcutPath = [IO.Path]::GetFullPath($shortcutPath)
 if (-not $shortcutPath.EndsWith(".lnk", [StringComparison]::OrdinalIgnoreCase)) {
     throw "Shortcut path must end with .lnk"
 }
@@ -23,7 +16,7 @@ if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
 
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $shell.CreateShortcut($shortcutPath)
-$shortcut.TargetPath = $TargetPath
-$shortcut.Arguments = $Arguments
-$shortcut.WorkingDirectory = $WorkingDirectory
+$shortcut.TargetPath = "powershell.exe"
+$shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`""
+$shortcut.WorkingDirectory = $backendRoot
 $shortcut.Save()
