@@ -145,6 +145,21 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
 
         self.assertEqual(parse_feed_objects(payload), [])
 
+    def test_parser_accepts_extensionless_media_cdn_url(self):
+        payload = {
+            "schema": "xiaolou_capture_v1",
+            "capture_id": "feed-extensionless",
+            "media_url": (
+                "https://wxsmw.wxs.qq.com/251/20302/media"
+                "?token=extensionless"
+            ),
+        }
+
+        items = parse_feed_objects(payload)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].capture_id, "feed-extensionless")
+
     def test_normalized_instrumentation_matches_observed_media_request(self):
         payload = {
             "schema": "xiaolou_capture_v1",

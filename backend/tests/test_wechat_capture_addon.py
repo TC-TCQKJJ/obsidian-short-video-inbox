@@ -339,6 +339,27 @@ class WechatCaptureAddonTest(unittest.TestCase):
 
         self.assertEqual(len(matcher.recent_candidates()), 1)
 
+    def test_extensionless_media_cdn_request_is_observed(self):
+        matcher = CaptureMatcher(max_age_seconds=30)
+        addon = self._build_addon(matcher)
+        media_url = (
+            "https://wxsmw.wxs.qq.com/251/20302/media?token=extensionless"
+        )
+        addon.record_feed_payload(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-extensionless",
+                "media_url": media_url,
+            }
+        )
+
+        addon.record_request_event(
+            media_url,
+            observed_at=time.time(),
+        )
+
+        self.assertEqual(len(matcher.recent_candidates()), 1)
+
     def test_logs_redact_signed_query_and_cookie(self):
         self.assertEqual(
             redact_url("https://wxsmw.wxs.qq.com/v.mp4?token=secret"),

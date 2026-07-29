@@ -208,8 +208,14 @@ func TestMediaURLIgnoresQueryString(t *testing.T) {
 	if !isMediaURL("https://finder.video.qq.com/251/20302/stodownload?token=secret") {
 		t.Fatal("expected signed stodownload URL to be treated as media")
 	}
+	if !isMediaURL("https://wxsmw.wxs.qq.com/251/20302/media?token=secret") {
+		t.Fatal("expected an extensionless media CDN URL to be treated as media")
+	}
 	if isMediaURL("https://channels.weixin.qq.com/feed.json") {
 		t.Fatal("did not expect JSON URL to be treated as media")
+	}
+	if isMediaURL("https://mail.qq.com/extensionless") {
+		t.Fatal("did not expect an unrelated extensionless URL to be media")
 	}
 }
 

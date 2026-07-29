@@ -83,6 +83,13 @@ def is_allowed_host(host: str) -> bool:
     )
 
 
+def is_media_host(host: str) -> bool:
+    normalized = str(host or "").strip().rstrip(".").lower()
+    return normalized == "finder.video.qq.com" or any(
+        normalized.endswith(suffix) for suffix in ALLOWED_SUFFIXES
+    )
+
+
 def ensure_local_token(paths: CapturePaths) -> str:
     if paths.token_path.exists():
         token = paths.token_path.read_text(encoding="utf-8").strip()

@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 from wechat_capture.feed_parser import parse_feed_objects
 from wechat_capture.matcher import CaptureMatcher
 from wechat_capture.redaction import redact_url
-from wechat_capture.security import CapturePaths, is_allowed_host
+from wechat_capture.security import CapturePaths, is_allowed_host, is_media_host
 
 
 MAX_RESPONSE_BODY_BYTES = 8 * 1024 * 1024
@@ -61,7 +61,10 @@ class PassiveWechatCaptureAddon:
         parsed = urlsplit(url)
         if not is_allowed_host(parsed.hostname or ""):
             return
-        if not _is_media_path(parsed.path):
+        if not _is_media_path(parsed.path) and not (
+            is_media_host(parsed.hostname or "")
+            and parsed.path not in {"", "/"}
+        ):
             return
 
         self.matcher.record_media_request(

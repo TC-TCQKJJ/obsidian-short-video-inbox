@@ -4,7 +4,7 @@ import json
 from urllib.parse import urlencode, urlsplit
 
 from wechat_capture.model import CaptureCandidate
-from wechat_capture.security import is_allowed_host
+from wechat_capture.security import is_allowed_host, is_media_host
 
 
 MEDIA_SUFFIXES = (".mp4", ".m3u8", ".flv")
@@ -108,7 +108,9 @@ def _is_allowed_media_url(raw_url: str) -> bool:
     if not is_allowed_host(parsed.hostname or ""):
         return False
     path = parsed.path.lower()
-    return path.endswith(MEDIA_SUFFIXES + MEDIA_PATH_NAMES)
+    return path.endswith(MEDIA_SUFFIXES + MEDIA_PATH_NAMES) or (
+        is_media_host(parsed.hostname or "") and path not in {"", "/"}
+    )
 
 
 def _object_description(value) -> dict:

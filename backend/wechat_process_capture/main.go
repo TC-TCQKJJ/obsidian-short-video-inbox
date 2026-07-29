@@ -40,7 +40,7 @@ const (
 	maxResponseBodySize = 8 * 1024 * 1024
 	heartbeatInterval   = 2 * time.Second
 	maxBridgeFailures   = 3
-	eventQueueSize      = 16
+	eventQueueSize      = 64
 	captureFeedPath     = "/__xiaolou_capture/feed"
 )
 
@@ -658,6 +658,9 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			ObservedAt: float64(time.Now().UnixNano()) / 1e9,
 		})
 	case public.HttpResponseOK:
+		if isCaptureFeedURL(rawURL) {
+			return
+		}
 		headers := responseHeaders(conn.GetResponseHeader())
 		targetScript := isTargetFeedScript(rawURL, headers["Content-Type"])
 		if targetScript {
@@ -843,10 +846,21 @@ func isMediaURL(rawURL string) bool {
 		return false
 	}
 	path := strings.ToLower(parsed.Path)
-	return strings.HasSuffix(path, ".mp4") ||
+	if strings.HasSuffix(path, ".mp4") ||
 		strings.HasSuffix(path, ".m3u8") ||
 		strings.HasSuffix(path, ".flv") ||
-		strings.HasSuffix(path, "/stodownload")
+		strings.HasSuffix(path, "/stodownload") {
+		return true
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "finder.video.qq.com" ||
+		strings.HasSuffix(host, ".finder.video.qq.com") ||
+		strings.HasSuffix(host, ".wxs.qq.com") ||
+		strings.HasSuffix(host, ".wxqcloud.qq.com") ||
+		strings.HasSuffix(host, ".wxlivecdn.com") {
+		return path != "" && path != "/"
+	}
+	return false
 }
 
 func safeRequestHeaders(headers sunnyHTTP.Header) map[string]string {
