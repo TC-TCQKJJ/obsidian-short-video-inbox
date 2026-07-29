@@ -17,6 +17,7 @@ class CaptureCandidate:
     request_headers: dict[str, str] = field(default_factory=dict)
     observed_at: float = field(default_factory=time)
     is_active: bool = False
+    context_texts: tuple[str, ...] = ()
 
     def public_dict(self) -> dict:
         return {

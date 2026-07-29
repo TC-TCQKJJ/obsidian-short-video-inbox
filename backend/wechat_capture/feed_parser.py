@@ -84,11 +84,12 @@ def _normalized_candidate_from_node(node: dict) -> CaptureCandidate | None:
 
     capture_id = str(node.get("capture_id") or "").strip()
     media_url = str(node.get("media_url") or "").strip()
+    context_texts = _normalized_context_texts(node.get("context_texts"))
     is_active = schema == "xiaolou_capture_active_v1"
     if is_active:
         if not _is_allowed_media_url(media_url):
             media_url = ""
-        if not capture_id and not media_url:
+        if not capture_id and not media_url and not context_texts:
             return None
     elif not capture_id:
         return None
@@ -108,7 +109,23 @@ def _normalized_candidate_from_node(node: dict) -> CaptureCandidate | None:
         duration_ms=_to_int(node.get("duration_ms")),
         decrypt_key=_to_int(node.get("decrypt_key")),
         is_active=is_active,
+        context_texts=context_texts,
     )
+
+
+def _normalized_context_texts(value) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+
+    texts: list[str] = []
+    for item in value[:8]:
+        if not isinstance(item, str):
+            continue
+        text = " ".join(item.split())[:2048]
+        if len(text) < 2 or text in texts:
+            continue
+        texts.append(text)
+    return tuple(texts)
 
 
 def _is_allowed_media_url(raw_url: str) -> bool:

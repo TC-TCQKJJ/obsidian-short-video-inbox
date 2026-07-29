@@ -188,6 +188,29 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
         self.assertTrue(items[0].is_active)
         self.assertEqual(items[0].capture_id, "")
 
+    def test_parser_accepts_active_blob_with_bounded_dom_contexts(self):
+        items = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_active_v1",
+                "capture_id": "",
+                "media_url": "blob:https://channels.weixin.qq.com/player",
+                "context_texts": [
+                    "  Player controls  ",
+                    "Target title  Target author",
+                    "Target title  Target author",
+                    123,
+                ],
+            }
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertTrue(items[0].is_active)
+        self.assertEqual(items[0].media_url, "")
+        self.assertEqual(
+            items[0].context_texts,
+            ("Player controls", "Target title Target author"),
+        )
+
     def test_normalized_instrumentation_matches_observed_media_request(self):
         payload = {
             "schema": "xiaolou_capture_v1",
@@ -464,6 +487,76 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
         matches = matcher.recent_candidates()
         self.assertEqual([item.capture_id for item in matches], ["feed-playing"])
         self.assertIn("token=playing", matches[0].media_url)
+
+    def test_active_mode_matches_unique_title_in_nearest_dom_context(self):
+        matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
+        first = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-target",
+                "title": "Target title",
+                "author": "Target author",
+                "media_url": "https://findera4.video.qq.com/target",
+            }
+        )[0]
+        second = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-preload",
+                "title": "Preloaded title",
+                "author": "Other author",
+                "media_url": "https://findera4.video.qq.com/preload",
+            }
+        )[0]
+        matcher.record_feed(first)
+        matcher.record_feed(second)
+        active = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_active_v1",
+                "media_url": "blob:https://channels.weixin.qq.com/player",
+                "context_texts": [
+                    "Player controls",
+                    "Target title Target author",
+                    "Target title Target author Preloaded title Other author",
+                ],
+            }
+        )[0]
+
+        matcher.record_feed(active)
+
+        self.assertEqual(
+            [item.capture_id for item in matcher.recent_candidates()],
+            ["feed-target"],
+        )
+
+    def test_active_mode_rejects_ambiguous_dom_context(self):
+        matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
+        for capture_id, title in (
+            ("feed-first", "First title"),
+            ("feed-second", "Second title"),
+        ):
+            matcher.record_feed(
+                parse_feed_objects(
+                    {
+                        "schema": "xiaolou_capture_v1",
+                        "capture_id": capture_id,
+                        "title": title,
+                        "media_url": (
+                            f"https://findera4.video.qq.com/{capture_id}"
+                        ),
+                    }
+                )[0]
+            )
+        matcher.record_feed(
+            parse_feed_objects(
+                {
+                    "schema": "xiaolou_capture_active_v1",
+                    "context_texts": ["First title Second title"],
+                }
+            )[0]
+        )
+
+        self.assertEqual(matcher.recent_candidates(), [])
 
     def test_recent_candidates_prunes_entries_older_than_max_age(self):
         matcher = CaptureMatcher(max_age_seconds=10)

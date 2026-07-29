@@ -91,6 +91,9 @@ func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
 	if strings.Index(text, captureActivePath) > strings.Index(text, "</head>") {
 		t.Fatal("expected the active-video bridge before the closing head")
 	}
+	if !strings.Contains(captureVideoBridgeScript, `context_texts:`) {
+		t.Fatal("expected the active-video bridge to send DOM contexts")
+	}
 }
 
 func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {

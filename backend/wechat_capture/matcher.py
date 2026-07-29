@@ -35,6 +35,7 @@ class CaptureMatcher:
         self._active_capture_id: str | None = None
         self._active_identity: tuple[str, str] | None = None
         self._active_media_url = ""
+        self._active_contexts: tuple[str, ...] = ()
         self._active_observed_at = 0.0
 
     @property
@@ -47,14 +48,17 @@ class CaptureMatcher:
         with self._lock:
             self._prune_locked(now=candidate.observed_at)
             if candidate.is_active:
-                if candidate.capture_id:
-                    self._active_capture_id = candidate.capture_id
+                self._active_capture_id = candidate.capture_id or None
+                self._active_identity = None
+                self._active_media_url = ""
                 identity = _media_identity(candidate.media_url)
                 if identity[0] and identity[1]:
                     self._active_identity = identity
                     self._active_media_url = candidate.media_url
+                self._active_contexts = candidate.context_texts
                 self._active_observed_at = candidate.observed_at
                 self._match_active_identity_locked()
+                self._match_active_context_locked()
                 return
             identity = _media_identity(candidate.media_url)
             if not identity[0] or not identity[1]:
@@ -62,6 +66,8 @@ class CaptureMatcher:
             self._feeds_by_media[identity] = candidate
             if identity == self._active_identity:
                 self._match_active_identity_locked()
+            elif self._active_contexts:
+                self._match_active_context_locked()
             observation = self._recent_media.get(identity)
             if observation is not None:
                 media_url, request_headers, observed_at = observation
@@ -105,7 +111,9 @@ class CaptureMatcher:
                         return []
                     return [candidate]
                 if self._active_capture_id is None:
-                    self._log_active_diagnostics(active=0)
+                    self._log_active_diagnostics(
+                        active=int(bool(self._active_contexts))
+                    )
                     return []
                 candidates = sorted(
                     (
@@ -161,6 +169,7 @@ class CaptureMatcher:
             self._active_capture_id = None
             self._active_identity = None
             self._active_media_url = ""
+            self._active_contexts = ()
             self._active_observed_at = 0.0
 
     def _match_active_identity_locked(self) -> None:
@@ -174,6 +183,24 @@ class CaptureMatcher:
             media_url=self._active_media_url or candidate.media_url,
             observed_at=self._active_observed_at,
         )
+
+    def _match_active_context_locked(self) -> None:
+        if not self._active_contexts:
+            return
+        for context in self._active_contexts:
+            matches = [
+                (identity, candidate)
+                for identity, candidate in self._feeds_by_media.items()
+                if len(candidate.title.strip()) >= 2
+                and candidate.title.strip() in context
+            ]
+            if len(matches) != 1:
+                continue
+            identity, candidate = matches[0]
+            self._active_identity = identity
+            self._active_media_url = candidate.media_url
+            self._match_active_identity_locked()
+            return
 
     def _log_active_diagnostics(self, *, active: int) -> None:
         self.logger.info(
