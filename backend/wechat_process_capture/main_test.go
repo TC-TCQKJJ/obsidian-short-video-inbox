@@ -2,7 +2,17 @@
 
 package main
 
-import "testing"
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"testing"
+	"time"
+)
 
 func TestAllowedHosts(t *testing.T) {
 	allowed := []string{
@@ -102,5 +112,78 @@ func TestParseLoopbackProxy(t *testing.T) {
 				t.Fatal("expected host and host:port interception targets")
 			}
 		})
+	}
+}
+
+func TestCreateCaptureCertificate(t *testing.T) {
+	rootKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test capture CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	rootDER, err := x509.CreateCertificate(
+		rand.Reader,
+		rootTemplate,
+		rootTemplate,
+		&rootKey.PublicKey,
+		rootKey,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootCertPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: rootDER,
+	})
+	rootKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(rootKey),
+	})
+
+	leafCertPEM, leafKeyPEM, err := createCaptureCertificate(
+		rootCertPEM,
+		rootKeyPEM,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafPair, err := tls.X509KeyPair(leafCertPEM, leafKeyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafCert, err := x509.ParseCertificate(leafPair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootCert, err := x509.ParseCertificate(rootDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := leafCert.CheckSignatureFrom(rootCert); err != nil {
+		t.Fatalf("leaf certificate is not signed by the per-machine CA: %v", err)
+	}
+	for _, host := range []string{
+		"channels.weixin.qq.com",
+		"cdn.finder.video.qq.com",
+		"wxsmw.wxs.qq.com",
+	} {
+		if err := leafCert.VerifyHostname(host); err != nil {
+			t.Fatalf("leaf certificate does not cover %s: %v", host, err)
+		}
+	}
+	leafKey, ok := leafPair.PrivateKey.(*rsa.PrivateKey)
+	if !ok {
+		t.Fatal("leaf certificate did not use an RSA key")
+	}
+	if leafKey.PublicKey.N.Cmp(rootKey.PublicKey.N) == 0 {
+		t.Fatal("leaf certificate reused the CA private key")
 	}
 }

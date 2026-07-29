@@ -5,12 +5,17 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -287,11 +292,14 @@ func configureCaptureCertificates(
 	if err != nil {
 		return fmt.Errorf("read per-machine CA key: %w", err)
 	}
+	leafCertPEM, leafKeyPEM, err := createCaptureCertificate(certPEM, keyPEM)
+	if err != nil {
+		return err
+	}
+	manager := SunnyNet.NewCertManager()
+	manager.Certificates = string(leafCertPEM)
+	manager.PrivateKey = string(leafKeyPEM)
 	for _, host := range certificateHosts {
-		manager := SunnyNet.NewCertManager()
-		if !manager.LoadX509Certificate(host, string(certPEM), string(keyPEM)) {
-			return fmt.Errorf("generate capture certificate for %s", host)
-		}
 		if !sunny.AddHttpCertificate(
 			host,
 			manager,
@@ -301,6 +309,76 @@ func configureCaptureCertificates(
 		}
 	}
 	return nil
+}
+
+func createCaptureCertificate(
+	rootCertPEM []byte,
+	rootKeyPEM []byte,
+) ([]byte, []byte, error) {
+	rootPair, err := tls.X509KeyPair(rootCertPEM, rootKeyPEM)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load capture CA for leaf certificate: %w", err)
+	}
+	if len(rootPair.Certificate) == 0 {
+		return nil, nil, errors.New("capture CA certificate is empty")
+	}
+	rootCert, err := x509.ParseCertificate(rootPair.Certificate[0])
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse capture CA for leaf certificate: %w", err)
+	}
+	rootKey, ok := rootPair.PrivateKey.(*rsa.PrivateKey)
+	if !ok {
+		return nil, nil, errors.New("capture CA must use an RSA private key")
+	}
+
+	leafKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate capture leaf key: %w", err)
+	}
+	serialLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serial, err := rand.Int(rand.Reader, serialLimit)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generate capture certificate serial: %w", err)
+	}
+	now := time.Now()
+	notAfter := now.Add(7 * 24 * time.Hour)
+	if rootCert.NotAfter.Before(notAfter) {
+		notAfter = rootCert.NotAfter
+	}
+	leafTemplate := &x509.Certificate{
+		SerialNumber: serial,
+		Subject: pkix.Name{
+			CommonName: "Xiaolou WeChat Channels Capture",
+		},
+		NotBefore:             now.Add(-5 * time.Minute),
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              append([]string(nil), certificateHosts...),
+	}
+	leafDER, err := x509.CreateCertificate(
+		rand.Reader,
+		leafTemplate,
+		rootCert,
+		&leafKey.PublicKey,
+		rootKey,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("sign capture leaf certificate: %w", err)
+	}
+	leafCertPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: leafDER,
+	})
+	leafKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(leafKey),
+	})
+	if _, err := tls.X509KeyPair(leafCertPEM, leafKeyPEM); err != nil {
+		return nil, nil, fmt.Errorf("validate capture leaf certificate: %w", err)
+	}
+	return leafCertPEM, leafKeyPEM, nil
 }
 
 func currentLoopbackProxy() (string, []string, bool) {
