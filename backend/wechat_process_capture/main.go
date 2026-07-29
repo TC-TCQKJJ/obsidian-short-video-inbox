@@ -89,14 +89,11 @@ var interceptionRules = strings.Join([]string{
 }, ";")
 
 var (
-	captureCacheToken = fmt.Sprintf("%x", time.Now().UnixNano())
-	htmlScriptPattern = regexp.MustCompile(`(src|href)="([^"]+\.js)"`)
-	jsImportPatterns  = []*regexp.Regexp{
-		regexp.MustCompile(`from {0,1}"([^"]+\.js)"`),
-		regexp.MustCompile(`"js/([^"]+\.js)"`),
-		regexp.MustCompile(`import\("([^"]+\.js)"\)`),
-		regexp.MustCompile(`import {0,1}"([^"]+\.js)"`),
-	}
+	captureCacheToken         = fmt.Sprintf("%x", time.Now().UnixNano())
+	htmlScriptPattern         = regexp.MustCompile(`(src|href)="([^"]+\.js)"`)
+	targetScriptImportPattern = regexp.MustCompile(
+		`(virtual_svg-icons-register\.publish[^"'?]*\.js)`,
+	)
 	feedFunctionPattern = regexp.MustCompile(
 		`(?s)async (finderGetCommentDetail|finderPcFlow|finderGetRecommend|finderUserPage)\((\w+)\)\{(.*?)\}async`,
 	)
@@ -763,16 +760,10 @@ func instrumentWechatResponse(
 		return body, false
 	}
 
-	modified := source
-	replacements := []string{
-		`from"$1?xiaolou_capture=` + captureCacheToken + `"`,
-		`"js/$1?xiaolou_capture=` + captureCacheToken + `"`,
-		`import("$1?xiaolou_capture=` + captureCacheToken + `")`,
-		`import"$1?xiaolou_capture=` + captureCacheToken + `"`,
-	}
-	for index, pattern := range jsImportPatterns {
-		modified = pattern.ReplaceAllString(modified, replacements[index])
-	}
+	modified := targetScriptImportPattern.ReplaceAllString(
+		source,
+		`$1?xiaolou_capture=`+captureCacheToken,
+	)
 	if strings.Contains(parsed.Path, "virtual_svg-icons-register") {
 		modified = feedFunctionPattern.ReplaceAllString(
 			modified,

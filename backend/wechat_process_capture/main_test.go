@@ -93,6 +93,32 @@ func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {
 	}
 }
 
+func TestInstrumentWechatJavascriptBustsOnlyTargetScriptImport(t *testing.T) {
+	body := []byte(
+		`import"./worker-client.publishABC.js";` +
+			`import"./virtual_svg-icons-register.publishXYZ.js";`,
+	)
+	modified, ok := instrumentWechatResponse(
+		"https://res.wx.qq.com/t/index.publishABC.js",
+		"application/javascript",
+		body,
+	)
+	if !ok {
+		t.Fatal("expected the target script import to be cache-busted")
+	}
+	text := string(modified)
+	if !strings.Contains(
+		text,
+		`virtual_svg-icons-register.publishXYZ.js?xiaolou_capture=`+
+			captureCacheToken,
+	) {
+		t.Fatal("expected the target script import to use the session token")
+	}
+	if !strings.Contains(text, `worker-client.publishABC.js"`) {
+		t.Fatal("expected unrelated imports to remain unchanged")
+	}
+}
+
 func TestTargetFeedScriptIsNarrowlyScoped(t *testing.T) {
 	for _, testCase := range []struct {
 		rawURL      string
