@@ -47,8 +47,25 @@ func TestCaptureFeedURLIsNarrowlyScoped(t *testing.T) {
 	}
 }
 
+func TestCaptureActiveURLIsNarrowlyScoped(t *testing.T) {
+	if !isCaptureActiveURL(
+		"https://channels.weixin.qq.com/__xiaolou_capture/active.js",
+	) {
+		t.Fatal("expected the local active script endpoint to be recognized")
+	}
+	for _, rawURL := range []string{
+		"https://channels.weixin.qq.com/__xiaolou_capture/other.js",
+		"https://res.wx.qq.com/__xiaolou_capture/active.js",
+		"https://channels.weixin.qq.com.evil.example/__xiaolou_capture/active.js",
+	} {
+		if isCaptureActiveURL(rawURL) {
+			t.Fatalf("expected local active script endpoint to reject %s", rawURL)
+		}
+	}
+}
+
 func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
-	body := []byte(`<html><script src="https://res.wx.qq.com/app.js"></script><img src="cover.jpg"></html>`)
+	body := []byte(`<html><head><script src="https://res.wx.qq.com/app.js"></script></head><body><img src="cover.jpg"></body></html>`)
 	modified, ok := instrumentWechatResponse(
 		"https://channels.weixin.qq.com/web/pages/feed",
 		"text/html; charset=utf-8",
@@ -63,6 +80,16 @@ func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
 	}
 	if !strings.Contains(text, `src="cover.jpg"`) {
 		t.Fatal("expected non-script assets to remain unchanged")
+	}
+	if !strings.Contains(
+		text,
+		`src="/__xiaolou_capture/active.js?xiaolou_capture=`+
+			captureCacheToken,
+	) {
+		t.Fatal("expected the active-video bridge to load in the page")
+	}
+	if strings.Index(text, captureActivePath) > strings.Index(text, "</head>") {
+		t.Fatal("expected the active-video bridge before the closing head")
 	}
 }
 
@@ -116,11 +143,6 @@ func TestInstrumentWechatInteractionFeedAndCurrentItem(t *testing.T) {
 		`this.currentFeed,true`,
 		`xiaolou_capture_active_v1`,
 		`media_url:__xiaolou_active__?"":__xiaolou_url__`,
-		`addEventListener("playing"`,
-		`currentSrc`,
-		`currentSource`,
-		`currentSources`,
-		`globalThis.videojs.getPlayer`,
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("expected current-feed instrumentation to contain %q", expected)

@@ -42,6 +42,7 @@ const (
 	maxBridgeFailures   = 3
 	eventQueueSize      = 64
 	captureFeedPath     = "/__xiaolou_capture/feed"
+	captureActivePath   = "/__xiaolou_capture/active.js"
 )
 
 var exactHosts = map[string]struct{}{
@@ -637,6 +638,17 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 
 	switch conn.Type() {
 	case public.HttpSendRequest:
+		if isCaptureActiveURL(rawURL) {
+			headers := make(sunnyHTTP.Header)
+			headers.Set("Content-Type", "application/javascript; charset=utf-8")
+			headers.Set("Cache-Control", "no-store")
+			conn.StopRequest(
+				http.StatusOK,
+				[]byte(captureVideoBridgeScript),
+				headers,
+			)
+			return
+		}
 		if isCaptureFeedURL(rawURL) {
 			body := conn.GetRequestBody()
 			if len(body) > 0 && len(body) <= maxResponseBodySize && json.Valid(body) {
@@ -759,6 +771,15 @@ func isCaptureFeedURL(rawURL string) bool {
 		parsed.Path == captureFeedPath
 }
 
+func isCaptureActiveURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Hostname(), "channels.weixin.qq.com") &&
+		parsed.Path == captureActivePath
+}
+
 func instrumentWechatResponse(
 	rawURL string,
 	contentType string,
@@ -778,6 +799,18 @@ func instrumentWechatResponse(
 			source,
 			`$1="$2?xiaolou_capture=`+captureCacheToken+`"`,
 		)
+		if !strings.Contains(modified, captureActivePath) {
+			tag := `<script src="` + captureActivePath +
+				`?xiaolou_capture=` + captureCacheToken + `"></script>`
+			if headEnd := strings.Index(
+				strings.ToLower(modified),
+				"</head>",
+			); headEnd >= 0 {
+				modified = modified[:headEnd] + tag + modified[headEnd:]
+			} else {
+				modified = tag + modified
+			}
+		}
 		return []byte(modified), modified != source
 	}
 
@@ -813,7 +846,7 @@ func instrumentWechatResponse(
 			replaceFeedsReplacement,
 		)
 		if modified != beforeInstrumentation {
-			modified += captureBridgeScript + captureVideoBridgeScript
+			modified += captureBridgeScript
 		}
 	}
 	return []byte(modified), modified != source
