@@ -152,9 +152,7 @@ func run() error {
 	}
 	defer func() {
 		sunny.ProcessCancelAll()
-		if drive := sunny.Drive(); drive != nil {
-			drive.Close()
-		}
+		sunny.Close()
 		_, _ = bridge.post(bridgeEvent{
 			Type:  "status",
 			State: "driver_stopped",

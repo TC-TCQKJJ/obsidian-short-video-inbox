@@ -221,6 +221,7 @@ class ProcessCaptureSourceBoundaryTest(unittest.TestCase):
         source = GO_HELPER.read_text(encoding="utf-8")
 
         self.assertIn("if !sunny.OpenDrive(0)", source)
+        self.assertIn("sunny.Close()", source)
         self.assertIn("process driver failed to start", source)
         self.assertNotIn("system proxy", source.lower())
 
