@@ -126,6 +126,27 @@ class ProcessCaptureEventProcessorTest(unittest.TestCase):
         self.assertIn("请求 2", self.processor.diagnostic_text())
         self.assertIn("信息 1", self.processor.diagnostic_text())
 
+    def test_heartbeat_distinguishes_raw_and_decrypted_traffic(self):
+        self.processor.handle({"type": "status", "state": "driver_ready"})
+        self.processor.handle(
+            {
+                "type": "status",
+                "state": "heartbeat",
+                "tcp_count": 3,
+            }
+        )
+        self.assertIn("原始连接 3", self.processor.diagnostic_text())
+
+        self.processor.handle(
+            {
+                "type": "status",
+                "state": "heartbeat",
+                "tcp_count": 3,
+                "http_count": 2,
+            }
+        )
+        self.assertIn("已解密 2", self.processor.diagnostic_text())
+
     def test_malformed_response_body_is_rejected(self):
         with self.assertRaises(ValueError):
             self.processor.handle(
@@ -211,6 +232,9 @@ class ProcessCaptureSourceBoundaryTest(unittest.TestCase):
         self.assertIn("SetMustTcpRegexp(interceptionRules, false)", source)
         self.assertIn('ProcessAddName(processName)', source)
         self.assertIn('"WeChatAppEx.exe"', source)
+        self.assertIn('"finder.video.qq.com:*"', source)
+        self.assertIn('"*.wxs.qq.com:*"', source)
+        self.assertIn("sender.handleTCP", source)
         self.assertNotIn("SunnyRoot", source)
         self.assertNotIn("sunny.Start(", source)
         self.assertNotIn("SetIEProxy", source)

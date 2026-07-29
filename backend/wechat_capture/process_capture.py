@@ -38,11 +38,13 @@ class ProcessCaptureEventProcessor:
         self.driver_stopped = threading.Event()
         self.stop_requested = threading.Event()
         self._counter_lock = threading.Lock()
+        self._tcp_events = 0
+        self._http_events = 0
         self._request_events = 0
         self._response_events = 0
         self._dropped_events = 0
         self._failed_events = 0
-        self._last_logged_metrics = (0, 0, 0, 0)
+        self._last_logged_metrics = (0, 0, 0, 0, 0, 0)
 
     def authenticate(self, authorization: str | None) -> bool:
         expected = f"Bearer {self.token}"
@@ -96,6 +98,8 @@ class ProcessCaptureEventProcessor:
 
     def diagnostic_text(self) -> str:
         with self._counter_lock:
+            tcp = self._tcp_events
+            http = self._http_events
             requests = self._request_events
             responses = self._response_events
             dropped = self._dropped_events
@@ -103,10 +107,14 @@ class ProcessCaptureEventProcessor:
 
         if not self.driver_ready.is_set():
             return "捕获驱动正在启动"
-        if requests == 0 and responses == 0:
+        if tcp == 0 and http == 0 and requests == 0 and responses == 0:
             return "驱动已连接，尚未检测到视频号流量"
         if dropped or failed:
             return "已检测到视频号流量，部分事件异常，请查看日志"
+        if http == 0 and requests == 0 and responses == 0:
+            return f"已接管微信流量：原始连接 {tcp}，尚未解密视频号 HTTP"
+        if requests == 0 and responses == 0:
+            return f"已解密 {http} 个视频号 HTTP 请求，等待媒体链接"
         if responses == 0:
             return f"已检测到 {requests} 个视频请求，等待视频信息"
         return f"已检测到视频号数据：请求 {requests}，信息 {responses}"
@@ -120,17 +128,23 @@ class ProcessCaptureEventProcessor:
 
     def _update_helper_metrics(self, event: dict[str, object]) -> None:
         metrics = (
+            _optional_count(event.get("tcp_count")),
+            _optional_count(event.get("http_count")),
             _optional_count(event.get("request_count")),
             _optional_count(event.get("response_count")),
             _optional_count(event.get("dropped_count")),
             _optional_count(event.get("failed_count")),
         )
         with self._counter_lock:
-            self._request_events = max(self._request_events, metrics[0])
-            self._response_events = max(self._response_events, metrics[1])
-            self._dropped_events = max(self._dropped_events, metrics[2])
-            self._failed_events = max(self._failed_events, metrics[3])
+            self._tcp_events = max(self._tcp_events, metrics[0])
+            self._http_events = max(self._http_events, metrics[1])
+            self._request_events = max(self._request_events, metrics[2])
+            self._response_events = max(self._response_events, metrics[3])
+            self._dropped_events = max(self._dropped_events, metrics[4])
+            self._failed_events = max(self._failed_events, metrics[5])
             current = (
+                self._tcp_events,
+                self._http_events,
                 self._request_events,
                 self._response_events,
                 self._dropped_events,
@@ -141,8 +155,8 @@ class ProcessCaptureEventProcessor:
                 self._last_logged_metrics = current
         if changed:
             self.logger.info(
-                "WeChat process capture counters: requests=%d responses=%d "
-                "dropped=%d failed=%d",
+                "WeChat process capture counters: tcp=%d http=%d "
+                "requests=%d responses=%d dropped=%d failed=%d",
                 *current,
             )
 

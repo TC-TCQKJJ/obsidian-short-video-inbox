@@ -51,12 +51,19 @@ var allowedSuffixes = []string{
 
 var interceptionRules = strings.Join([]string{
 	"weixin.qq.com",
+	"weixin.qq.com:*",
 	"channels.weixin.qq.com",
+	"channels.weixin.qq.com:*",
 	"finder.video.qq.com",
+	"finder.video.qq.com:*",
 	"*.finder.video.qq.com",
+	"*.finder.video.qq.com:*",
 	"*.wxs.qq.com",
+	"*.wxs.qq.com:*",
 	"*.wxqcloud.qq.com",
+	"*.wxqcloud.qq.com:*",
 	"*.wxlivecdn.com",
+	"*.wxlivecdn.com:*",
 }, ";")
 
 type capturePaths struct {
@@ -72,6 +79,8 @@ type bridgeEvent struct {
 	Headers       map[string]string `json:"headers,omitempty"`
 	Body          []byte            `json:"body,omitempty"`
 	ObservedAt    float64           `json:"observed_at,omitempty"`
+	TCPCount      uint64            `json:"tcp_count,omitempty"`
+	HTTPCount     uint64            `json:"http_count,omitempty"`
 	RequestCount  uint64            `json:"request_count,omitempty"`
 	ResponseCount uint64            `json:"response_count,omitempty"`
 	DroppedCount  uint64            `json:"dropped_count,omitempty"`
@@ -91,6 +100,8 @@ type eventSender struct {
 	bridge        *bridgeClient
 	events        chan bridgeEvent
 	done          chan struct{}
+	tcpCount      atomic.Uint64
+	httpCount     atomic.Uint64
 	requestCount  atomic.Uint64
 	responseCount atomic.Uint64
 	droppedCount  atomic.Uint64
@@ -142,7 +153,7 @@ func run() error {
 
 	sender := newEventSender(bridge)
 	defer sender.close()
-	sunny.SetGoCallback(sender.handleHTTP, nil, nil, nil)
+	sunny.SetGoCallback(sender.handleHTTP, sender.handleTCP, nil, nil)
 	sunny.ProcessCancelAll()
 	sunny.ProcessAddName(processName)
 
@@ -317,6 +328,8 @@ func (sender *eventSender) heartbeat() bridgeEvent {
 	return bridgeEvent{
 		Type:          "status",
 		State:         "heartbeat",
+		TCPCount:      sender.tcpCount.Load(),
+		HTTPCount:     sender.httpCount.Load(),
 		RequestCount:  sender.requestCount.Load(),
 		ResponseCount: sender.responseCount.Load(),
 		DroppedCount:  sender.droppedCount.Load(),
@@ -332,6 +345,7 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 
 	switch conn.Type() {
 	case public.HttpSendRequest:
+		sender.httpCount.Add(1)
 		if !isMediaURL(rawURL) {
 			return
 		}
@@ -356,6 +370,12 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			Headers: headers,
 			Body:    body,
 		})
+	}
+}
+
+func (sender *eventSender) handleTCP(conn SunnyNet.ConnTCP) {
+	if conn.Type() == public.SunnyNetMsgTypeTCPAboutToConnect {
+		sender.tcpCount.Add(1)
 	}
 }
 
