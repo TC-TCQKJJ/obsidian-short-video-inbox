@@ -100,17 +100,19 @@ type bridgeClient struct {
 }
 
 type eventSender struct {
-	bridge        *bridgeClient
-	events        chan bridgeEvent
-	done          chan struct{}
-	tcpCount      atomic.Uint64
-	httpCount     atomic.Uint64
-	captureErrors atomic.Uint64
-	lastError     atomic.Value
-	requestCount  atomic.Uint64
-	responseCount atomic.Uint64
-	droppedCount  atomic.Uint64
-	failedCount   atomic.Uint64
+	bridge          *bridgeClient
+	events          chan bridgeEvent
+	done            chan struct{}
+	upstreamProxy   string
+	upstreamTargets map[string]struct{}
+	tcpCount        atomic.Uint64
+	httpCount       atomic.Uint64
+	captureErrors   atomic.Uint64
+	lastError       atomic.Value
+	requestCount    atomic.Uint64
+	responseCount   atomic.Uint64
+	droppedCount    atomic.Uint64
+	failedCount     atomic.Uint64
 }
 
 func main() {
@@ -153,17 +155,18 @@ func run() error {
 		return fmt.Errorf("configure SunnyNet CA: %w", sunny.Error)
 	}
 	rules := interceptionRules
-	if proxyURL, proxyTargets, ok := currentLoopbackProxy(); ok {
+	proxyURL := ""
+	var proxyTargets []string
+	if configuredProxy, configuredTargets, ok := currentLoopbackProxy(); ok {
+		proxyURL = configuredProxy
+		proxyTargets = configuredTargets
 		rules += ";" + strings.Join(proxyTargets, ";")
-		if !sunny.SetGlobalProxy(proxyURL, 60_000) {
-			return errors.New("configure loopback system proxy as SunnyNet upstream")
-		}
 	}
 	if err := sunny.SetMustTcpRegexp(rules, false); err != nil {
 		return fmt.Errorf("configure narrow interception rules: %w", err)
 	}
 
-	sender := newEventSender(bridge)
+	sender := newEventSender(bridge, proxyURL, proxyTargets)
 	defer sender.close()
 	sunny.SetGoCallback(sender.handleHTTP, sender.handleTCP, nil, nil)
 	sunny.ProcessCancelAll()
@@ -366,11 +369,21 @@ func (client *bridgeClient) post(event bridgeEvent) (bridgeResponse, error) {
 	return result, nil
 }
 
-func newEventSender(bridge *bridgeClient) *eventSender {
+func newEventSender(
+	bridge *bridgeClient,
+	upstreamProxy string,
+	upstreamTargets []string,
+) *eventSender {
+	targets := make(map[string]struct{}, len(upstreamTargets))
+	for _, target := range upstreamTargets {
+		targets[strings.ToLower(strings.TrimSpace(target))] = struct{}{}
+	}
 	sender := &eventSender{
-		bridge: bridge,
-		events: make(chan bridgeEvent, eventQueueSize),
-		done:   make(chan struct{}),
+		bridge:          bridge,
+		events:          make(chan bridgeEvent, eventQueueSize),
+		done:            make(chan struct{}),
+		upstreamProxy:   upstreamProxy,
+		upstreamTargets: targets,
 	}
 	go sender.run()
 	return sender
@@ -431,6 +444,12 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 
 	switch conn.Type() {
 	case public.HttpSendRequest:
+		if sender.upstreamProxy != "" &&
+			!conn.SetAgent(sender.upstreamProxy, 60_000) {
+			sender.recordCaptureError("configure HTTP upstream proxy failed")
+			conn.StopRequest(http.StatusBadGateway, nil)
+			return
+		}
 		sender.httpCount.Add(1)
 		if !isMediaURL(rawURL) {
 			return
@@ -457,15 +476,31 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			Body:    body,
 		})
 	case public.HttpRequestFail:
-		sender.captureErrors.Add(1)
-		sender.lastError.Store(sanitizeCaptureError(conn.Error()))
+		sender.recordCaptureError(conn.Error())
 	}
 }
 
 func (sender *eventSender) handleTCP(conn SunnyNet.ConnTCP) {
-	if conn.Type() == public.SunnyNetMsgTypeTCPAboutToConnect {
-		sender.tcpCount.Add(1)
+	if conn.Type() != public.SunnyNetMsgTypeTCPAboutToConnect {
+		return
 	}
+	sender.tcpCount.Add(1)
+	if sender.upstreamProxy == "" || sender.isUpstreamTarget(conn.RemoteAddress()) {
+		return
+	}
+	if !conn.SetAgent(sender.upstreamProxy, 60_000) {
+		sender.recordCaptureError("configure TCP upstream proxy failed")
+	}
+}
+
+func (sender *eventSender) isUpstreamTarget(target string) bool {
+	_, ok := sender.upstreamTargets[strings.ToLower(strings.TrimSpace(target))]
+	return ok
+}
+
+func (sender *eventSender) recordCaptureError(raw string) {
+	sender.captureErrors.Add(1)
+	sender.lastError.Store(sanitizeCaptureError(raw))
 }
 
 func sanitizeCaptureError(raw string) string {

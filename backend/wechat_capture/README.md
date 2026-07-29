@@ -26,8 +26,9 @@ The helper loads this machine's CA, attaches only to `WeChatAppEx.exe`, and
 decrypts only the narrow WeChat Channels host allowlist. Other WeChat traffic
 is forwarded without HTTPS decryption.
 
-The helper does not start SunnyNet's public proxy listener, modify the Windows
-system proxy, or use Clash/TUN.
+The helper does not modify the Windows system proxy. When Windows already uses
+a loopback HTTP proxy such as Clash, the helper preserves that route per
+connection without applying it to SunnyNet's certificate probe.
 
 ## Start
 
