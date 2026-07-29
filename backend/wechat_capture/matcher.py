@@ -191,8 +191,7 @@ class CaptureMatcher:
             matches = [
                 (identity, candidate)
                 for identity, candidate in self._feeds_by_media.items()
-                if len(candidate.title.strip()) >= 2
-                and candidate.title.strip() in context
+                if _candidate_matches_context(candidate, context)
             ]
             if len(matches) != 1:
                 continue
@@ -203,14 +202,39 @@ class CaptureMatcher:
             return
 
     def _log_active_diagnostics(self, *, active: int) -> None:
+        context_matches = [
+            sum(
+                _candidate_matches_context(candidate, context)
+                for candidate in self._feeds_by_media.values()
+            )
+            for context in self._active_contexts
+        ]
         self.logger.info(
             "WeChat active feed diagnostics: active=%d feeds=%d media=%d "
-            "matched=%d active_matched=0",
+            "matched=%d contexts=%d context_matches=%s active_matched=0",
             active,
             len(self._feeds_by_media),
             len(self._recent_media),
             len(self._matched),
+            len(self._active_contexts),
+            ",".join(str(count) for count in context_matches) or "-",
         )
+
+
+def _candidate_matches_context(
+    candidate: CaptureCandidate,
+    context: str,
+) -> bool:
+    normalized_context = _normalized_text(context)
+    signals = (
+        _normalized_text(candidate.title),
+        _normalized_text(candidate.author),
+    )
+    return any(len(signal) >= 2 and signal in normalized_context for signal in signals)
+
+
+def _normalized_text(value: str) -> str:
+    return " ".join(str(value or "").split())
 
 
 def _path_name(path: str) -> str:

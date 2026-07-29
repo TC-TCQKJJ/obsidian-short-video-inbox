@@ -494,7 +494,7 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
             {
                 "schema": "xiaolou_capture_v1",
                 "capture_id": "feed-target",
-                "title": "Target title",
+                "title": "Target\n title",
                 "author": "Target author",
                 "media_url": "https://findera4.video.qq.com/target",
             }
@@ -523,6 +523,45 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
         )[0]
 
         matcher.record_feed(active)
+
+        self.assertEqual(
+            [item.capture_id for item in matcher.recent_candidates()],
+            ["feed-target"],
+        )
+
+    def test_active_mode_matches_unique_author(self):
+        matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
+        target = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-target",
+                "title": "Target\n title",
+                "author": "Unique author",
+                "media_url": "https://findera4.video.qq.com/target",
+            }
+        )[0]
+        preload = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-preload",
+                "title": "Other title",
+                "author": "Other author",
+                "media_url": "https://findera4.video.qq.com/preload",
+            }
+        )[0]
+        matcher.record_feed(target)
+        matcher.record_feed(preload)
+        matcher.record_feed(
+            parse_feed_objects(
+                {
+                    "schema": "xiaolou_capture_active_v1",
+                    "context_texts": [
+                        "Player controls",
+                        "Controls and Unique author",
+                    ],
+                }
+            )[0]
+        )
 
         self.assertEqual(
             [item.capture_id for item in matcher.recent_candidates()],

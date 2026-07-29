@@ -118,10 +118,10 @@ def _normalized_context_texts(value) -> tuple[str, ...]:
         return ()
 
     texts: list[str] = []
-    for item in value[:8]:
+    for item in value[:16]:
         if not isinstance(item, str):
             continue
-        text = " ".join(item.split())[:2048]
+        text = " ".join(item.split())[:4096]
         if len(text) < 2 or text in texts:
             continue
         texts.append(text)
