@@ -142,11 +142,15 @@ func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {
 		`/__xiaolou_capture/feed`,
 		`xiaolou_capture_active_v1`,
 		`decrypt_key:__xiaolou_active__?0:Number`,
+		`__xiaolou_capture_feed__(__xiaolou_object__,false)`,
 		`return __xiaolou_result__`,
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("expected instrumented script to contain %q", expected)
 		}
+	}
+	if strings.Contains(text, `==="finderGetCommentDetail"`) {
+		t.Fatal("did not expect comment preload state to mark a feed active")
 	}
 }
 
@@ -170,13 +174,16 @@ func TestInstrumentWechatInteractionFeedAndCurrentItem(t *testing.T) {
 	for _, expected := range []string{
 		`finderGetInteractionedFeedList`,
 		`globalThis.__xiaolou_capture_feed__`,
-		`this.currentFeed,true`,
+		`this.currentFeed,false`,
 		`xiaolou_capture_active_v1`,
 		`media_url:__xiaolou_active__?"":__xiaolou_url__`,
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("expected current-feed instrumentation to contain %q", expected)
 		}
+	}
+	if strings.Contains(text, `__xiaolou_capture_feed__(this.currentFeed,true)`) {
+		t.Fatal("did not expect internal preload state to mark a feed active")
 	}
 }
 
