@@ -35,6 +35,22 @@ class WechatCaptureInstallTest(unittest.TestCase):
         self.assertNotIn("proxyenable", text)
         self.assertNotIn("set-itemproperty", text)
 
+    def test_installer_requires_source_built_process_helper(self):
+        text = (ROOT / "install.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("wechat-process-capture.exe", text)
+        self.assertIn("Get-FileHash -Algorithm SHA256", text)
+        self.assertNotIn("Invoke-WebRequest", text)
+        self.assertNotIn("SunnyRoot", text)
+
+    def test_installer_creates_desktop_ui_shortcut(self):
+        text = (ROOT / "install.ps1").read_text(encoding="utf-8")
+
+        self.assertIn("微信视频号捕获.lnk", text)
+        self.assertIn("WScript.Shell", text)
+        self.assertIn("-WindowStyle Hidden", text)
+        self.assertIn("start.ps1", text)
+
 
 if __name__ == "__main__":
     unittest.main()

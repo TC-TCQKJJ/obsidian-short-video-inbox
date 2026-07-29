@@ -16,6 +16,7 @@ EXACT_HOSTS = {
     "finder.video.qq.com",
 }
 ALLOWED_SUFFIXES = (
+    ".finder.video.qq.com",
     ".wxs.qq.com",
     ".wxqcloud.qq.com",
     ".wxlivecdn.com",
@@ -59,8 +60,20 @@ class CapturePaths:
         return self.mitm_dir / "mitmproxy-ca-cert.cer"
 
     @property
+    def ca_pem_path(self) -> Path:
+        return self.mitm_dir / "mitmproxy-ca-cert.pem"
+
+    @property
+    def ca_key_path(self) -> Path:
+        return self.mitm_dir / "mitmproxy-ca.pem"
+
+    @property
     def ca_thumbprint_path(self) -> Path:
         return self.mitm_dir / "ca-thumbprint.txt"
+
+    @property
+    def process_helper_path(self) -> Path:
+        return self.base_dir / "bin" / "wechat-process-capture.exe"
 
 
 def is_allowed_host(host: str) -> bool:

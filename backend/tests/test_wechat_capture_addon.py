@@ -286,6 +286,30 @@ class WechatCaptureAddonTest(unittest.TestCase):
             },
         )
 
+    def test_stodownload_media_request_is_observed(self):
+        matcher = CaptureMatcher(max_age_seconds=30)
+        addon = self._build_addon(matcher)
+        feed = {
+            "id": "feed-stodownload",
+            "objectDesc": {
+                "description": "Current download route",
+                "media": [
+                    {
+                        "url": "https://finder.video.qq.com/251/20302/stodownload",
+                        "urlToken": "?token=feed",
+                    }
+                ],
+            },
+        }
+        addon.record_feed_payload({"object": feed})
+
+        addon.record_request_event(
+            "https://finder.video.qq.com/251/20302/stodownload?token=latest",
+            observed_at=time.time(),
+        )
+
+        self.assertEqual(len(matcher.recent_candidates()), 1)
+
     def test_logs_redact_signed_query_and_cookie(self):
         self.assertEqual(
             redact_url("https://wxsmw.wxs.qq.com/v.mp4?token=secret"),

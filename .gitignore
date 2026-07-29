@@ -16,3 +16,5 @@ backend/**/*.p12
 backend/**/*.pfx
 backend/**/queue/
 backend/**/jobs/
+backend/wechat_process_capture/dist/
+backend/wechat_process_capture/vendor/

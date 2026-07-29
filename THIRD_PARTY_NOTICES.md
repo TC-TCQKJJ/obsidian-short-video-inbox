@@ -12,3 +12,11 @@ derived from `ltaoo/wx_channels_download`, itself derived from
 The Commons Clause restricts selling software whose value derives entirely or
 substantially from the covered software. That file is not relicensed under the
 repository's MIT license.
+
+`backend/wechat_process_capture` links against `qtgolang/SunnyNet` for its
+Windows process-driver interface.
+
+- Upstream: https://github.com/qtgolang/SunnyNet
+- Copyright: Copyright (c) 2025 秦天
+- License: MIT License
+- Full license text: `third_party/SunnyNet-LICENSE`

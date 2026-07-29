@@ -24,6 +24,7 @@ THUMBPRINT = "A1B2C3D4E5F600112233445566778899AABBCCDD"
 class WechatCaptureSecurityTest(unittest.TestCase):
     def test_allowlist_is_narrow(self):
         self.assertTrue(is_allowed_host("channels.weixin.qq.com"))
+        self.assertTrue(is_allowed_host("cdn.finder.video.qq.com"))
         self.assertTrue(is_allowed_host("wxsmw.wxs.qq.com"))
         self.assertTrue(is_allowed_host("subdomain.wxqcloud.qq.com"))
         self.assertFalse(is_allowed_host("mail.qq.com"))

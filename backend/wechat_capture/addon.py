@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import gzip
 import json
 import logging
+import zlib
 from urllib.parse import urlsplit
 
 from wechat_capture.feed_parser import parse_feed_objects
@@ -12,6 +14,7 @@ from wechat_capture.security import CapturePaths, is_allowed_host
 
 MAX_RESPONSE_BODY_BYTES = 8 * 1024 * 1024
 MEDIA_SUFFIXES = (".mp4", ".m3u8", ".flv")
+MEDIA_PATH_NAMES = ("/stodownload",)
 SAFE_REQUEST_HEADERS = ("User-Agent", "Referer", "Origin", "Range", "Accept")
 CLASH_HEALTH_CHECKS = {("www.gstatic.com", "/generate_204")}
 
@@ -41,13 +44,29 @@ class PassiveWechatCaptureAddon:
             flow.kill()
             return
 
-        if not _is_media_path(getattr(request, "path", "")):
-            return
-
-        self.matcher.record_media_request(
+        self.record_request_event(
             _request_url(request),
             observed_at=float(getattr(request, "timestamp_start", 0.0) or 0.0),
             request_headers=_safe_request_headers(getattr(request, "headers", None)),
+        )
+
+    def record_request_event(
+        self,
+        url: str,
+        *,
+        observed_at: float,
+        request_headers: dict[str, str] | None = None,
+    ) -> None:
+        parsed = urlsplit(url)
+        if not is_allowed_host(parsed.hostname or ""):
+            return
+        if not _is_media_path(parsed.path):
+            return
+
+        self.matcher.record_media_request(
+            url,
+            observed_at=observed_at,
+            request_headers=_safe_request_headers(request_headers),
         )
 
     def response(self, flow) -> None:
@@ -60,21 +79,44 @@ class PassiveWechatCaptureAddon:
         if not is_allowed_host(host):
             return
 
-        body = getattr(response, "raw_content", b"") or b""
+        body = getattr(response, "content", None)
+        if body is None:
+            body = getattr(response, "raw_content", b"") or b""
+        self.record_response_event(
+            _request_url(request),
+            response_headers=getattr(response, "headers", None),
+            body=body,
+        )
+
+    def record_response_event(
+        self,
+        url: str,
+        *,
+        response_headers,
+        body: bytes,
+    ) -> None:
+        parsed = urlsplit(url)
+        if not is_allowed_host(parsed.hostname or ""):
+            return
+
         if len(body) > self.max_response_body_bytes:
             self.logger.debug(
                 "Ignored oversized WeChat response for %s",
-                redact_url(_request_url(request)),
+                redact_url(url),
             )
             return
 
-        if not _looks_like_json(_header_value(getattr(response, "headers", None), "Content-Type"), body):
+        body = _decode_content_encoding(response_headers, body)
+        if not _looks_like_json(_header_value(response_headers, "Content-Type"), body):
             return
 
         try:
             payload = json.loads(body)
         except (TypeError, ValueError, UnicodeDecodeError):
-            self.logger.debug("Ignored undecodable JSON response for %s", redact_url(_request_url(request)))
+            self.logger.debug(
+                "Ignored undecodable JSON response for %s",
+                redact_url(url),
+            )
             return
 
         self.record_feed_payload(payload)
@@ -117,7 +159,7 @@ def build_proxy_options(paths: CapturePaths):
 
 def _is_media_path(path: str) -> bool:
     clean_path = urlsplit(str(path or "")).path.lower()
-    return clean_path.endswith(MEDIA_SUFFIXES)
+    return clean_path.endswith(MEDIA_SUFFIXES + MEDIA_PATH_NAMES)
 
 
 def _is_clash_health_check(host: str, path: str) -> bool:
@@ -152,6 +194,22 @@ def _header_value(headers, name: str) -> str | None:
         if str(header_name).lower() == lowered_name:
             return str(value)
     return None
+
+
+def _decode_content_encoding(headers, body: bytes) -> bytes:
+    encoding = (_header_value(headers, "Content-Encoding") or "").lower()
+    try:
+        if "gzip" in encoding:
+            return gzip.decompress(body)
+        if "deflate" in encoding:
+            return zlib.decompress(body)
+        if "br" in encoding:
+            import brotli
+
+            return brotli.decompress(body)
+    except (ImportError, OSError, ValueError, zlib.error):
+        return body
+    return body
 
 
 def _looks_like_json(content_type: str | None, body: bytes) -> bool:
