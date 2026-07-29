@@ -393,7 +393,7 @@ def main(argv=None) -> int:
     capture_logger.addHandler(file_handler)
     root = tk.Tk()
     root.withdraw()
-    matcher = CaptureMatcher(max_age_seconds=120)
+    matcher = CaptureMatcher(max_age_seconds=120, logger=capture_logger)
     token = ensure_local_token(paths)
     process_worker = ProcessCaptureWorker(
         paths=paths,

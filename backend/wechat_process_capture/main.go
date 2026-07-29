@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -40,12 +41,14 @@ const (
 	heartbeatInterval   = 2 * time.Second
 	maxBridgeFailures   = 3
 	eventQueueSize      = 16
+	captureFeedPath     = "/__xiaolou_capture/feed"
 )
 
 var exactHosts = map[string]struct{}{
 	"weixin.qq.com":          {},
 	"channels.weixin.qq.com": {},
 	"finder.video.qq.com":    {},
+	"res.wx.qq.com":          {},
 }
 
 var allowedSuffixes = []string{
@@ -59,6 +62,7 @@ var certificateHosts = []string{
 	"weixin.qq.com",
 	"channels.weixin.qq.com",
 	"finder.video.qq.com",
+	"res.wx.qq.com",
 	"*.finder.video.qq.com",
 	"*.wxs.qq.com",
 	"*.wxqcloud.qq.com",
@@ -72,6 +76,8 @@ var interceptionRules = strings.Join([]string{
 	"channels.weixin.qq.com:*",
 	"finder.video.qq.com",
 	"finder.video.qq.com:*",
+	"res.wx.qq.com",
+	"res.wx.qq.com:*",
 	"*.finder.video.qq.com",
 	"*.finder.video.qq.com:*",
 	"*.wxs.qq.com",
@@ -81,6 +87,21 @@ var interceptionRules = strings.Join([]string{
 	"*.wxlivecdn.com",
 	"*.wxlivecdn.com:*",
 }, ";")
+
+var (
+	htmlScriptPattern = regexp.MustCompile(`(src|href)="([^"]+\.js)"`)
+	jsImportPatterns  = []*regexp.Regexp{
+		regexp.MustCompile(`from {0,1}"([^"]+\.js)"`),
+		regexp.MustCompile(`"js/([^"]+\.js)"`),
+		regexp.MustCompile(`import\("([^"]+\.js)"\)`),
+		regexp.MustCompile(`import {0,1}"([^"]+\.js)"`),
+	}
+	feedFunctionPattern = regexp.MustCompile(
+		`(?s)async (finderGetCommentDetail|finderPcFlow|finderGetRecommend|finderUserPage)\((\w+)\)\{(.*?)\}async`,
+	)
+)
+
+const feedFunctionReplacement = `async $1($2){var __xiaolou_result__=await(async()=>{$3})();try{var __xiaolou_objects__=__xiaolou_result__&&__xiaolou_result__.data&&__xiaolou_result__.data.object;var __xiaolou_list__=Array.isArray(__xiaolou_objects__)?__xiaolou_objects__:[__xiaolou_objects__];__xiaolou_list__.forEach(function(__xiaolou_object__){try{var __xiaolou_desc__=__xiaolou_object__&&__xiaolou_object__.objectDesc;var __xiaolou_media__=__xiaolou_desc__&&__xiaolou_desc__.media&&__xiaolou_desc__.media[0];if(!__xiaolou_object__||!__xiaolou_desc__||!__xiaolou_media__)return;var __xiaolou_url__=String(__xiaolou_media__.url||"")+String(__xiaolou_media__.urlToken||"");var __xiaolou_id__=String(__xiaolou_object__.id||__xiaolou_object__.objectId||"");if(!__xiaolou_id__||!__xiaolou_url__)return;var __xiaolou_spec__=__xiaolou_media__.spec&&__xiaolou_media__.spec[0]||{};var __xiaolou_contact__=__xiaolou_object__.contact||{};fetch("` + captureFeedPath + `",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({schema:"xiaolou_capture_v1",capture_id:__xiaolou_id__,nonce_id:String(__xiaolou_object__.objectNonceId||__xiaolou_object__.nonceId||""),title:String(__xiaolou_desc__.description||""),author:String(__xiaolou_object__.nickname||__xiaolou_contact__.nickname||__xiaolou_contact__.nickName||""),media_url:__xiaolou_url__,cover_url:String(__xiaolou_media__.coverUrl||""),duration_ms:Number(__xiaolou_media__.duration||__xiaolou_spec__.durationMs||0),decrypt_key:Number(__xiaolou_media__.decodeKey||0)})}).catch(function(){});}catch(__xiaolou_item_error__){}});}catch(__xiaolou_error__){}return __xiaolou_result__;}async`
 
 type capturePaths struct {
 	certFile  string
@@ -586,6 +607,25 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 
 	switch conn.Type() {
 	case public.HttpSendRequest:
+		if isCaptureFeedURL(rawURL) {
+			body := conn.GetRequestBody()
+			if len(body) > 0 && len(body) <= maxResponseBodySize && json.Valid(body) {
+				sender.enqueue(bridgeEvent{
+					Type: "response",
+					URL:  rawURL,
+					Headers: map[string]string{
+						"Content-Type": "application/json",
+					},
+					Body: body,
+				})
+			} else {
+				sender.recordCaptureError("invalid local feed metadata")
+			}
+			headers := make(sunnyHTTP.Header)
+			headers.Set("Content-Type", "application/json")
+			conn.StopRequest(http.StatusOK, []byte("{}"), headers)
+			return
+		}
 		if sender.upstreamProxy != "" &&
 			!conn.SetAgent(sender.upstreamProxy, 60_000) {
 			sender.recordCaptureError("configure HTTP upstream proxy failed")
@@ -608,6 +648,17 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			return
 		}
 		headers := responseHeaders(conn.GetResponseHeader())
+		if modifiedBody, modified := instrumentWechatResponse(
+			rawURL,
+			headers["Content-Type"],
+			body,
+		); modified {
+			responseHeader := conn.GetResponseHeader()
+			responseHeader.Del("Content-Encoding")
+			responseHeader.Del("Content-Length")
+			conn.SetResponseBody(modifiedBody)
+			return
+		}
 		if !looksLikeJSON(headers["Content-Type"], body) {
 			return
 		}
@@ -618,6 +669,61 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			Body:    body,
 		})
 	}
+}
+
+func isCaptureFeedURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Hostname(), "channels.weixin.qq.com") &&
+		parsed.Path == captureFeedPath
+}
+
+func instrumentWechatResponse(
+	rawURL string,
+	contentType string,
+	body []byte,
+) ([]byte, bool) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return body, false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	loweredContentType := strings.ToLower(contentType)
+	source := string(body)
+
+	if host == "channels.weixin.qq.com" &&
+		strings.Contains(loweredContentType, "text/html") {
+		modified := htmlScriptPattern.ReplaceAllString(
+			source,
+			`$1="$2?xiaolou_capture=1"`,
+		)
+		return []byte(modified), modified != source
+	}
+
+	if host != "res.wx.qq.com" ||
+		!strings.Contains(loweredContentType, "javascript") {
+		return body, false
+	}
+
+	modified := source
+	replacements := []string{
+		`from"$1?xiaolou_capture=1"`,
+		`"js/$1?xiaolou_capture=1"`,
+		`import("$1?xiaolou_capture=1")`,
+		`import"$1?xiaolou_capture=1"`,
+	}
+	for index, pattern := range jsImportPatterns {
+		modified = pattern.ReplaceAllString(modified, replacements[index])
+	}
+	if strings.Contains(parsed.Path, "virtual_svg-icons-register") {
+		modified = feedFunctionPattern.ReplaceAllString(
+			modified,
+			feedFunctionReplacement,
+		)
+	}
+	return []byte(modified), modified != source
 }
 
 func (sender *eventSender) handleTCP(conn SunnyNet.ConnTCP) {

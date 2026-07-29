@@ -135,6 +135,35 @@ class WechatCaptureAddonTest(unittest.TestCase):
         self._assert_response_untouched(flow, original, response_headers)
         self.assertEqual(matcher.feed_count, 1)
 
+    def test_unmatched_json_logs_schema_without_payload_values(self):
+        matcher = CaptureMatcher(max_age_seconds=30)
+        logger = self._build_logger()
+        addon = self._build_addon(matcher, logger=logger)
+        payload = {
+            "data": {
+                "objectDesc": "LEAKED_TITLE",
+                "mediaList": [
+                    {
+                        "playUrl": "https://finder.video.qq.com/private.mp4?token=LEAKED",
+                        "decodeKey": "LEAKED_KEY",
+                    }
+                ],
+            }
+        }
+
+        with self.assertLogs(logger, level="INFO") as captured:
+            addon.record_feed_payload(payload)
+
+        self.assertEqual(matcher.feed_count, 0)
+        self.assertEqual(len(captured.output), 1)
+        self.assertIn("data.objectDesc:string", captured.output[0])
+        self.assertIn("data.mediaList:array", captured.output[0])
+        self.assertIn("data.mediaList.playUrl:string", captured.output[0])
+        self.assertIn("data.mediaList.decodeKey:string", captured.output[0])
+        self.assertNotIn("LEAKED_TITLE", captured.output[0])
+        self.assertNotIn("finder.video.qq.com", captured.output[0])
+        self.assertNotIn("LEAKED_KEY", captured.output[0])
+
     def test_non_json_binary_response_is_ignored_without_modifying_response(self):
         matcher = CaptureMatcher(max_age_seconds=30)
         addon = self._build_addon(matcher)

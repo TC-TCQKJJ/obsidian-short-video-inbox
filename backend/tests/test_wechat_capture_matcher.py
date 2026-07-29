@@ -1,4 +1,5 @@
 from dataclasses import replace
+import json
 import time
 import unittest
 from unittest.mock import patch
@@ -95,6 +96,103 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
             "https://wxsmw.wxs.qq.com/video/feed-123.mp4?token=secret",
         )
         self.assertEqual(items[0].decrypt_key, 123456)
+
+    def test_parser_extracts_json_encoded_object_description(self):
+        feed = dict(FEED)
+        feed["objectDesc"] = json.dumps(FEED["objectDesc"])
+
+        items = parse_feed_objects({"data": {"object": feed}})
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].capture_id, "feed-123")
+        self.assertEqual(
+            items[0].media_url,
+            "https://wxsmw.wxs.qq.com/video/feed-123.mp4?token=secret",
+        )
+
+    def test_parser_extracts_normalized_local_instrumentation_payload(self):
+        payload = {
+            "schema": "xiaolou_capture_v1",
+            "capture_id": "feed-normalized-1",
+            "nonce_id": "nonce-normalized",
+            "title": "Normalized video",
+            "author": "Normalized author",
+            "media_url": (
+                "https://finder.video.qq.com/251/20302/stodownload"
+                "?token=normalized"
+            ),
+            "cover_url": "https://wxsmw.wxs.qq.com/cover/normalized.jpg",
+            "duration_ms": 123000,
+            "decrypt_key": 456789,
+        }
+
+        items = parse_feed_objects(payload)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].capture_id, "feed-normalized-1")
+        self.assertEqual(items[0].title, "Normalized video")
+        self.assertEqual(items[0].author, "Normalized author")
+        self.assertEqual(items[0].duration_ms, 123000)
+        self.assertEqual(items[0].decrypt_key, 456789)
+        self.assertIn("nonce=nonce-normalized", items[0].source_url)
+
+    def test_parser_rejects_untrusted_normalized_media_url(self):
+        payload = {
+            "schema": "xiaolou_capture_v1",
+            "capture_id": "feed-untrusted",
+            "media_url": "https://example.com/private.mp4?token=secret",
+        }
+
+        self.assertEqual(parse_feed_objects(payload), [])
+
+    def test_normalized_instrumentation_matches_observed_media_request(self):
+        payload = {
+            "schema": "xiaolou_capture_v1",
+            "capture_id": "feed-instrumented",
+            "media_url": (
+                "https://finder.video.qq.com/251/20302/stodownload"
+                "?token=feed"
+            ),
+            "decrypt_key": 987654,
+        }
+        matcher = CaptureMatcher(max_age_seconds=30)
+        matcher.record_feed(parse_feed_objects(payload)[0])
+
+        matcher.record_media_request(
+            "https://finder.video.qq.com/251/20302/stodownload?token=latest",
+            observed_at=time.time(),
+        )
+
+        matches = matcher.recent_candidates()
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].capture_id, "feed-instrumented")
+        self.assertEqual(matches[0].decrypt_key, 987654)
+
+    def test_media_request_can_arrive_before_instrumented_feed(self):
+        matcher = CaptureMatcher(max_age_seconds=30)
+        observed_at = time.time()
+        matcher.record_media_request(
+            "https://finder.video.qq.com/251/20302/stodownload?token=latest",
+            observed_at=observed_at,
+            request_headers={"Range": "bytes=0-"},
+        )
+        payload = {
+            "schema": "xiaolou_capture_v1",
+            "capture_id": "feed-late",
+            "media_url": (
+                "https://finder.video.qq.com/251/20302/stodownload"
+                "?token=feed"
+            ),
+            "decrypt_key": 123456,
+        }
+
+        matcher.record_feed(parse_feed_objects(payload)[0])
+
+        matches = matcher.recent_candidates()
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0].capture_id, "feed-late")
+        self.assertEqual(matches[0].observed_at, observed_at)
+        self.assertEqual(matches[0].request_headers, {"Range": "bytes=0-"})
 
     def test_parser_deduplicates_and_accepts_contact_nickname_variants(self):
         payload = {

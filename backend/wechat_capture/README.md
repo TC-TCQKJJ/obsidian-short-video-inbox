@@ -32,6 +32,13 @@ The helper does not modify the Windows system proxy. When Windows already uses
 a loopback HTTP proxy such as Clash, the helper preserves that route per
 connection without applying it to SunnyNet's certificate probe.
 
+WeChat exposes the media decryption key only after its own JavaScript API layer
+decodes the feed response. The helper therefore instruments only the named
+Finder API functions in JavaScript served by `res.wx.qq.com`. It projects the
+minimum capture fields to a same-origin `channels.weixin.qq.com` path that is
+intercepted locally and never sent upstream. It does not inject visible
+controls, load remote scripts, export cookies, or automate WeChat.
+
 ## Start
 
 Keep the existing local backend available on `127.0.0.1:5050`, then open the
@@ -59,12 +66,19 @@ The script removes only the exact thumbprint recorded during installation from
 
 ## Security Boundaries
 
-- No proxy listener is started
+- No general-purpose proxy is started with `Sunny.Start()`
 - Process event bridge: `127.0.0.1:2024` with bearer-token authentication
-- No SunnyNet proxy listener or firewall allow rule
+- No Windows system-proxy change or SunnyNet firewall allow rule
 - Only `WeChatAppEx.exe` is attached
-- No page injection or automated WeChat interaction
+- HTTPS decryption is limited to media hosts, `channels.weixin.qq.com`, and the
+  exact static-script host `res.wx.qq.com`
+- No visible UI injection or automated WeChat interaction; script
+  instrumentation is limited to named Finder feed functions
 - No whole-video file is created
 - Signed media URLs and request headers are DPAPI encrypted at rest
 - Non-allowlisted hosts are rejected
 - Local API calls require the shared token
+
+SunnyNet's process-driver mode owns an internal relay listener even though
+`Sunny.Start()` is not called. Constraining that relay's bind address is a
+remaining hardening item.

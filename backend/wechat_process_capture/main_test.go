@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 )
@@ -17,6 +18,7 @@ import (
 func TestAllowedHosts(t *testing.T) {
 	allowed := []string{
 		"https://channels.weixin.qq.com/feed",
+		"https://res.wx.qq.com/t/wx_fed/finder/app.js",
 		"https://finder.video.qq.com/video",
 		"https://cdn.finder.video.qq.com/video",
 		"https://wxsmw.wxs.qq.com/video.mp4",
@@ -27,6 +29,75 @@ func TestAllowedHosts(t *testing.T) {
 		if !isAllowedURL(rawURL) {
 			t.Fatalf("expected allowed URL: %s", rawURL)
 		}
+	}
+}
+
+func TestCaptureFeedURLIsNarrowlyScoped(t *testing.T) {
+	if !isCaptureFeedURL("https://channels.weixin.qq.com/__xiaolou_capture/feed") {
+		t.Fatal("expected the local feed endpoint to be recognized")
+	}
+	for _, rawURL := range []string{
+		"https://channels.weixin.qq.com/__xiaolou_capture/other",
+		"https://res.wx.qq.com/__xiaolou_capture/feed",
+		"https://channels.weixin.qq.com.evil.example/__xiaolou_capture/feed",
+	} {
+		if isCaptureFeedURL(rawURL) {
+			t.Fatalf("expected local feed endpoint to reject %s", rawURL)
+		}
+	}
+}
+
+func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
+	body := []byte(`<html><script src="https://res.wx.qq.com/app.js"></script><img src="cover.jpg"></html>`)
+	modified, ok := instrumentWechatResponse(
+		"https://channels.weixin.qq.com/web/pages/feed",
+		"text/html; charset=utf-8",
+		body,
+	)
+	if !ok {
+		t.Fatal("expected WeChat Channels HTML to be modified")
+	}
+	text := string(modified)
+	if !strings.Contains(text, `app.js?xiaolou_capture=1`) {
+		t.Fatal("expected the script URL to be cache-busted")
+	}
+	if !strings.Contains(text, `src="cover.jpg"`) {
+		t.Fatal("expected non-script assets to remain unchanged")
+	}
+}
+
+func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {
+	body := []byte(`async finderGetCommentDetail(e){return await api(e)}async next(){}`)
+	modified, ok := instrumentWechatResponse(
+		"https://res.wx.qq.com/t/wx_fed/finder/web/web-finder/res/js/virtual_svg-icons-register.publish.js",
+		"application/javascript",
+		body,
+	)
+	if !ok {
+		t.Fatal("expected the WeChat API script to be instrumented")
+	}
+	text := string(modified)
+	for _, expected := range []string{
+		`/__xiaolou_capture/feed`,
+		`schema:"xiaolou_capture_v1"`,
+		`decrypt_key:Number`,
+		`return __xiaolou_result__`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("expected instrumented script to contain %q", expected)
+		}
+	}
+}
+
+func TestInstrumentWechatResponseLeavesUnrelatedJavascriptUnchanged(t *testing.T) {
+	body := []byte(`console.log("unrelated")`)
+	modified, ok := instrumentWechatResponse(
+		"https://res.wx.qq.com/static/unrelated.js",
+		"application/javascript",
+		body,
+	)
+	if ok || string(modified) != string(body) {
+		t.Fatal("expected unrelated JavaScript to remain unchanged")
 	}
 }
 
@@ -184,6 +255,7 @@ func TestCreateCaptureCertificate(t *testing.T) {
 	}
 	for _, host := range []string{
 		"channels.weixin.qq.com",
+		"res.wx.qq.com",
 		"cdn.finder.video.qq.com",
 		"wxsmw.wxs.qq.com",
 	} {

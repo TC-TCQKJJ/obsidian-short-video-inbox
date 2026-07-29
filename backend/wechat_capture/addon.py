@@ -17,6 +17,7 @@ MEDIA_SUFFIXES = (".mp4", ".m3u8", ".flv")
 MEDIA_PATH_NAMES = ("/stodownload",)
 SAFE_REQUEST_HEADERS = ("User-Agent", "Referer", "Origin", "Range", "Accept")
 CLASH_HEALTH_CHECKS = {("www.gstatic.com", "/generate_204")}
+MAX_SCHEMA_ENTRIES = 80
 
 
 class PassiveWechatCaptureAddon:
@@ -122,7 +123,13 @@ class PassiveWechatCaptureAddon:
         self.record_feed_payload(payload)
 
     def record_feed_payload(self, payload) -> None:
-        for candidate in parse_feed_objects(payload):
+        candidates = parse_feed_objects(payload)
+        if not candidates:
+            self.logger.info(
+                "WeChat JSON schema without feed candidate: %s",
+                _summarize_payload_schema(payload),
+            )
+        for candidate in candidates:
             self.matcher.record_feed(candidate)
 
 
@@ -218,6 +225,54 @@ def _looks_like_json(content_type: str | None, body: bytes) -> bool:
 
     stripped = body.lstrip()
     return stripped.startswith(b"{") or stripped.startswith(b"[")
+
+
+def _summarize_payload_schema(payload) -> str:
+    entries: list[str] = []
+
+    def visit(node, path: tuple[str, ...], depth: int) -> None:
+        if depth > 8 or len(entries) >= MAX_SCHEMA_ENTRIES:
+            return
+        if isinstance(node, dict):
+            for raw_key, value in node.items():
+                key = str(raw_key)
+                next_path = path
+                if _is_schema_key(key):
+                    next_path = (*path, key)
+                    entries.append(f"{'.'.join(next_path)}:{_schema_type(value)}")
+                visit(value, next_path, depth + 1)
+                if len(entries) >= MAX_SCHEMA_ENTRIES:
+                    return
+        elif isinstance(node, list):
+            for value in node[:3]:
+                visit(value, path, depth + 1)
+                if len(entries) >= MAX_SCHEMA_ENTRIES:
+                    return
+
+    visit(payload, (), 0)
+    return ",".join(dict.fromkeys(entries)) or "<no relevant fields>"
+
+
+def _is_schema_key(key: str) -> bool:
+    if not key or len(key) > 48 or not key.isascii():
+        return False
+    if key[0] != "_" and not key[0].isalpha():
+        return False
+    return all(character == "_" or character.isalnum() for character in key)
+
+
+def _schema_type(value) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, (int, float)):
+        return "number"
+    return "string"
 
 
 def _ensure_option(proxy_options, name: str, typespec, default, help_text: str, *, choices=None) -> None:

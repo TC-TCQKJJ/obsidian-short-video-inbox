@@ -1,8 +1,14 @@
 from __future__ import annotations
 
-from urllib.parse import urlencode
+import json
+from urllib.parse import urlencode, urlsplit
 
 from wechat_capture.model import CaptureCandidate
+from wechat_capture.security import is_allowed_host
+
+
+MEDIA_SUFFIXES = (".mp4", ".m3u8", ".flv")
+MEDIA_PATH_NAMES = ("/stodownload",)
 
 
 def parse_feed_objects(payload) -> list[CaptureCandidate]:
@@ -30,8 +36,12 @@ def _visit_node(node, items: list[CaptureCandidate], seen: set[tuple[str, str]])
 
 
 def _candidate_from_node(node: dict) -> CaptureCandidate | None:
+    normalized = _normalized_candidate_from_node(node)
+    if normalized is not None:
+        return normalized
+
     object_id = str(node.get("id") or node.get("objectId") or "").strip()
-    description = node.get("objectDesc") or {}
+    description = _object_description(node.get("objectDesc"))
     media_items = description.get("media") or []
     media = media_items[0] if media_items else {}
     base_url = str(media.get("url") or "").strip()
@@ -48,9 +58,11 @@ def _candidate_from_node(node: dict) -> CaptureCandidate | None:
 
     contact = node.get("contact") or {}
     title = str(description.get("description") or "").strip()
-    author = ""
+    author = str(node.get("nickname") or "").strip()
     if isinstance(contact, dict):
-        author = str(contact.get("nickname") or contact.get("nickName") or "").strip()
+        author = author or str(
+            contact.get("nickname") or contact.get("nickName") or ""
+        ).strip()
 
     media_url = f"{base_url}{token}"
     return CaptureCandidate(
@@ -63,6 +75,52 @@ def _candidate_from_node(node: dict) -> CaptureCandidate | None:
         duration_ms=_to_int(media.get("duration")),
         decrypt_key=_to_int(media.get("decodeKey")),
     )
+
+
+def _normalized_candidate_from_node(node: dict) -> CaptureCandidate | None:
+    if node.get("schema") != "xiaolou_capture_v1":
+        return None
+
+    capture_id = str(node.get("capture_id") or "").strip()
+    media_url = str(node.get("media_url") or "").strip()
+    if not capture_id or not _is_allowed_media_url(media_url):
+        return None
+
+    return CaptureCandidate(
+        capture_id=capture_id,
+        title=str(node.get("title") or "视频号视频").strip(),
+        author=str(node.get("author") or "").strip(),
+        source_url=_build_source_url(
+            capture_id,
+            {"nonceId": node.get("nonce_id")},
+        ),
+        media_url=media_url,
+        cover_url=str(node.get("cover_url") or "").strip(),
+        duration_ms=_to_int(node.get("duration_ms")),
+        decrypt_key=_to_int(node.get("decrypt_key")),
+    )
+
+
+def _is_allowed_media_url(raw_url: str) -> bool:
+    parsed = urlsplit(raw_url)
+    if parsed.scheme.lower() not in {"http", "https"}:
+        return False
+    if not is_allowed_host(parsed.hostname or ""):
+        return False
+    path = parsed.path.lower()
+    return path.endswith(MEDIA_SUFFIXES + MEDIA_PATH_NAMES)
+
+
+def _object_description(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return {}
+    try:
+        decoded = json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
 
 
 def _build_source_url(object_id: str, node: dict) -> str:
