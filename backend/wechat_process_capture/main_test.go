@@ -107,6 +107,9 @@ func TestTargetFeedScriptIsNarrowlyScoped(t *testing.T) {
 			contentType: "text/javascript",
 		},
 	} {
+		if !isTargetFeedScriptURL(testCase.rawURL) {
+			t.Fatalf("expected target script URL: %s", testCase.rawURL)
+		}
 		if !isTargetFeedScript(testCase.rawURL, testCase.contentType) {
 			t.Fatalf("expected target script: %s", testCase.rawURL)
 		}
@@ -116,6 +119,9 @@ func TestTargetFeedScriptIsNarrowlyScoped(t *testing.T) {
 		"https://channels.weixin.qq.com/t/virtual_svg-icons-register.publish.js",
 		"https://res.wx.qq.com.evil.example/t/virtual_svg-icons-register.publish.js",
 	} {
+		if isTargetFeedScriptURL(rawURL) {
+			t.Fatalf("expected unrelated script URL to be rejected: %s", rawURL)
+		}
 		if isTargetFeedScript(rawURL, "application/javascript") {
 			t.Fatalf("expected unrelated script to be rejected: %s", rawURL)
 		}

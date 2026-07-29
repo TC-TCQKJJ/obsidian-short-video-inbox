@@ -112,22 +112,27 @@ class ProcessCaptureEventProcessorTest(unittest.TestCase):
 
     def test_heartbeat_metrics_are_visible_in_diagnostics(self):
         self.processor.handle({"type": "status", "state": "driver_ready"})
-        self.processor.handle(
-            {
-                "type": "status",
-                "state": "heartbeat",
-                "request_count": 2,
-                "response_count": 1,
-                "target_script_count": 1,
-                "instrumented_script_count": 1,
-                "feed_metadata_count": 1,
-                "dropped_count": 0,
-                "failed_count": 0,
-            }
-        )
+        with self.assertLogs(self.processor.logger, level="INFO") as captured:
+            self.processor.handle(
+                {
+                    "type": "status",
+                    "state": "heartbeat",
+                    "request_count": 2,
+                    "response_count": 1,
+                    "target_script_count": 1,
+                    "instrumented_script_count": 1,
+                    "feed_metadata_count": 1,
+                    "dropped_count": 0,
+                    "failed_count": 0,
+                }
+            )
 
         self.assertIn("请求 2", self.processor.diagnostic_text())
         self.assertIn("信息 1", self.processor.diagnostic_text())
+        self.assertIn(
+            "target_scripts=1 instrumented=1 feed_metadata=1",
+            captured.output[0],
+        )
 
     def test_heartbeat_reports_target_script_instrumentation_stage(self):
         self.processor.handle({"type": "status", "state": "driver_ready"})

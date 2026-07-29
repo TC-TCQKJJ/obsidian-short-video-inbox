@@ -636,6 +636,9 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			conn.StopRequest(http.StatusOK, []byte("{}"), headers)
 			return
 		}
+		if isTargetFeedScriptURL(rawURL) {
+			conn.GetRequestHeader().Del("Accept-Encoding")
+		}
 		if sender.upstreamProxy != "" &&
 			!conn.SetAgent(sender.upstreamProxy, 60_000) {
 			sender.recordCaptureError("configure HTTP upstream proxy failed")
@@ -691,15 +694,19 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 }
 
 func isTargetFeedScript(rawURL string, contentType string) bool {
+	return isTargetFeedScriptURL(rawURL) &&
+		strings.Contains(
+			strings.ToLower(contentType),
+			"javascript",
+		)
+}
+
+func isTargetFeedScriptURL(rawURL string) bool {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return false
 	}
 	return strings.EqualFold(parsed.Hostname(), "res.wx.qq.com") &&
-		strings.Contains(
-			strings.ToLower(contentType),
-			"javascript",
-		) &&
 		strings.Contains(parsed.Path, "virtual_svg-icons-register.publish")
 }
 

@@ -189,6 +189,9 @@ class ProcessCaptureEventProcessor:
                 self._capture_errors,
                 self._request_events,
                 self._response_events,
+                self._target_scripts,
+                self._instrumented_scripts,
+                self._feed_metadata,
                 self._dropped_events,
                 self._failed_events,
             )
