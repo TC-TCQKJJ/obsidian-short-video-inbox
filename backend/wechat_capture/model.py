@@ -16,6 +16,7 @@ class CaptureCandidate:
     decrypt_key: int = 0
     request_headers: dict[str, str] = field(default_factory=dict)
     observed_at: float = field(default_factory=time)
+    is_active: bool = False
 
     def public_dict(self) -> dict:
         return {

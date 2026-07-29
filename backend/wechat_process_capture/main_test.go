@@ -83,12 +83,41 @@ func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {
 	text := string(modified)
 	for _, expected := range []string{
 		`/__xiaolou_capture/feed`,
-		`schema:"xiaolou_capture_v1"`,
+		`xiaolou_capture_active_v1`,
 		`decrypt_key:Number`,
 		`return __xiaolou_result__`,
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("expected instrumented script to contain %q", expected)
+		}
+	}
+}
+
+func TestInstrumentWechatInteractionFeedAndCurrentItem(t *testing.T) {
+	body := []byte(
+		`async finderGetInteractionedFeedList(e){return await api(e)}}const x=1;` +
+			`class A{` +
+			`setCurrentFeedIndex(t,i){this.currentFeedIndex=t}coolDownSwitchFeed(){}` +
+			`goToNextFlowFeed(t){this.currentFeedIndex++}insertFeed(){}` +
+			`replaceFeeds(t,i=!0){this.feeds=t;this.currentFeedIndex=0}}class B{}`,
+	)
+	modified, ok := instrumentWechatResponse(
+		"https://res.wx.qq.com/t/virtual_svg-icons-register.publish.js",
+		"application/javascript",
+		body,
+	)
+	if !ok {
+		t.Fatal("expected interaction and current-feed methods to be instrumented")
+	}
+	text := string(modified)
+	for _, expected := range []string{
+		`finderGetInteractionedFeedList`,
+		`globalThis.__xiaolou_capture_feed__`,
+		`this.currentFeed,true`,
+		`xiaolou_capture_active_v1`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("expected current-feed instrumentation to contain %q", expected)
 		}
 	}
 }

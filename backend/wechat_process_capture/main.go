@@ -97,9 +97,29 @@ var (
 	feedFunctionPattern = regexp.MustCompile(
 		`(?s)async (finderGetCommentDetail|finderPcFlow|finderGetRecommend|finderUserPage)\((\w+)\)\{(.*?)\}async`,
 	)
+	interactionFeedFunctionPattern = regexp.MustCompile(
+		`(?s)async (finderGetInteractionedFeedList)\((\w+)\)\{(.*?)\}\}const`,
+	)
+	setCurrentFeedPattern = regexp.MustCompile(
+		`(?s)setCurrentFeedIndex\((\w+),(\w+)\)\{(.*?)\}coolDownSwitchFeed`,
+	)
+	nextFeedPattern = regexp.MustCompile(
+		`(?s)goToNextFlowFeed\((\w+)\)\{(.*?)\}insertFeed`,
+	)
+	replaceFeedsPattern = regexp.MustCompile(
+		`(?s)replaceFeeds\((\w+),(\w+)=!0\)\{(.*?)\}\}class`,
+	)
 )
 
-const feedFunctionReplacement = `async $1($2){var __xiaolou_result__=await(async()=>{$3})();try{var __xiaolou_objects__=__xiaolou_result__&&__xiaolou_result__.data&&__xiaolou_result__.data.object;var __xiaolou_list__=Array.isArray(__xiaolou_objects__)?__xiaolou_objects__:[__xiaolou_objects__];__xiaolou_list__.forEach(function(__xiaolou_object__){try{var __xiaolou_desc__=__xiaolou_object__&&__xiaolou_object__.objectDesc;var __xiaolou_media__=__xiaolou_desc__&&__xiaolou_desc__.media&&__xiaolou_desc__.media[0];if(!__xiaolou_object__||!__xiaolou_desc__||!__xiaolou_media__)return;var __xiaolou_url__=String(__xiaolou_media__.url||"")+String(__xiaolou_media__.urlToken||"");var __xiaolou_id__=String(__xiaolou_object__.id||__xiaolou_object__.objectId||"");if(!__xiaolou_id__||!__xiaolou_url__)return;var __xiaolou_spec__=__xiaolou_media__.spec&&__xiaolou_media__.spec[0]||{};var __xiaolou_contact__=__xiaolou_object__.contact||{};fetch("` + captureFeedPath + `",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({schema:"xiaolou_capture_v1",capture_id:__xiaolou_id__,nonce_id:String(__xiaolou_object__.objectNonceId||__xiaolou_object__.nonceId||""),title:String(__xiaolou_desc__.description||""),author:String(__xiaolou_object__.nickname||__xiaolou_contact__.nickname||__xiaolou_contact__.nickName||""),media_url:__xiaolou_url__,cover_url:String(__xiaolou_media__.coverUrl||""),duration_ms:Number(__xiaolou_media__.duration||__xiaolou_spec__.durationMs||0),decrypt_key:Number(__xiaolou_media__.decodeKey||0)})}).catch(function(){});}catch(__xiaolou_item_error__){}});}catch(__xiaolou_error__){}return __xiaolou_result__;}async`
+const (
+	feedFunctionReplacement            = `async $1($2){var __xiaolou_result__=await(async()=>{$3})();try{var __xiaolou_objects__=__xiaolou_result__&&__xiaolou_result__.data&&__xiaolou_result__.data.object;var __xiaolou_list__=Array.isArray(__xiaolou_objects__)?__xiaolou_objects__:[__xiaolou_objects__];__xiaolou_list__.forEach(function(__xiaolou_object__){if(globalThis.__xiaolou_capture_feed__)globalThis.__xiaolou_capture_feed__(__xiaolou_object__,"$1"==="finderGetCommentDetail");});}catch(__xiaolou_error__){}return __xiaolou_result__;}async`
+	interactionFeedFunctionReplacement = `async $1($2){var __xiaolou_result__=await(async()=>{$3})();try{var __xiaolou_objects__=__xiaolou_result__&&__xiaolou_result__.data&&__xiaolou_result__.data.object;var __xiaolou_list__=Array.isArray(__xiaolou_objects__)?__xiaolou_objects__:[__xiaolou_objects__];__xiaolou_list__.forEach(function(__xiaolou_object__){if(globalThis.__xiaolou_capture_feed__)globalThis.__xiaolou_capture_feed__(__xiaolou_object__,false);});}catch(__xiaolou_error__){}return __xiaolou_result__;}}const`
+	setCurrentFeedReplacement          = `setCurrentFeedIndex($1,$2){$3;try{if(globalThis.__xiaolou_capture_feed__)globalThis.__xiaolou_capture_feed__(this.currentFeed,true);}catch(__xiaolou_error__){}}coolDownSwitchFeed`
+	nextFeedReplacement                = `goToNextFlowFeed($1){var __xiaolou_result__=(()=>{$2})();try{if(globalThis.__xiaolou_capture_feed__)globalThis.__xiaolou_capture_feed__(this.currentFeed,true);}catch(__xiaolou_error__){}return __xiaolou_result__;}insertFeed`
+	replaceFeedsReplacement            = `replaceFeeds($1,$2=!0){var __xiaolou_result__=(()=>{$3})();try{if(globalThis.__xiaolou_capture_feed__)globalThis.__xiaolou_capture_feed__(this.currentFeed,true);}catch(__xiaolou_error__){}return __xiaolou_result__;}}class`
+	captureBridgeScript                = `
+;globalThis.__xiaolou_capture_feed__=function(__xiaolou_object__,__xiaolou_active__){try{var __xiaolou_desc__=__xiaolou_object__&&__xiaolou_object__.objectDesc;if(typeof __xiaolou_desc__==="string")try{__xiaolou_desc__=JSON.parse(__xiaolou_desc__);}catch(__xiaolou_parse_error__){return;}var __xiaolou_media__=__xiaolou_desc__&&__xiaolou_desc__.media&&__xiaolou_desc__.media[0];if(!__xiaolou_object__||!__xiaolou_desc__||!__xiaolou_media__)return;var __xiaolou_url__=String(__xiaolou_media__.url||"")+String(__xiaolou_media__.urlToken||"");var __xiaolou_id__=String(__xiaolou_object__.id||__xiaolou_object__.objectId||"");if(!__xiaolou_id__||!__xiaolou_url__)return;var __xiaolou_spec__=__xiaolou_media__.spec&&__xiaolou_media__.spec[0]||{};var __xiaolou_contact__=__xiaolou_object__.contact||{};fetch("` + captureFeedPath + `",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({schema:__xiaolou_active__?"xiaolou_capture_active_v1":"xiaolou_capture_v1",capture_id:__xiaolou_id__,nonce_id:String(__xiaolou_object__.objectNonceId||__xiaolou_object__.nonceId||""),title:String(__xiaolou_desc__.description||""),author:String(__xiaolou_object__.nickname||__xiaolou_contact__.nickname||__xiaolou_contact__.nickName||""),media_url:__xiaolou_url__,cover_url:String(__xiaolou_media__.coverUrl||""),duration_ms:Number(__xiaolou_media__.duration||__xiaolou_spec__.durationMs||0),decrypt_key:Number(__xiaolou_media__.decodeKey||0)})}).catch(function(){});}catch(__xiaolou_error__){}};`
+)
 
 type capturePaths struct {
 	certFile  string
@@ -769,10 +789,30 @@ func instrumentWechatResponse(
 		`$1?xiaolou_capture=`+captureCacheToken,
 	)
 	if strings.Contains(parsed.Path, "virtual_svg-icons-register") {
+		beforeInstrumentation := modified
 		modified = feedFunctionPattern.ReplaceAllString(
 			modified,
 			feedFunctionReplacement,
 		)
+		modified = interactionFeedFunctionPattern.ReplaceAllString(
+			modified,
+			interactionFeedFunctionReplacement,
+		)
+		modified = setCurrentFeedPattern.ReplaceAllString(
+			modified,
+			setCurrentFeedReplacement,
+		)
+		modified = nextFeedPattern.ReplaceAllString(
+			modified,
+			nextFeedReplacement,
+		)
+		modified = replaceFeedsPattern.ReplaceAllString(
+			modified,
+			replaceFeedsReplacement,
+		)
+		if modified != beforeInstrumentation {
+			modified += captureBridgeScript
+		}
 	}
 	return []byte(modified), modified != source
 }

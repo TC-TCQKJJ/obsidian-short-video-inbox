@@ -20,9 +20,11 @@ class CaptureMatcher:
         max_age_seconds: float,
         *,
         logger: logging.Logger | None = None,
+        require_active: bool = False,
     ) -> None:
         self.max_age_seconds = max_age_seconds
         self.logger = logger or logging.getLogger(__name__)
+        self.require_active = require_active
         self._lock = threading.RLock()
         self._feeds_by_media: dict[tuple[str, str], CaptureCandidate] = {}
         self._recent_media: dict[
@@ -30,6 +32,7 @@ class CaptureMatcher:
             tuple[str, dict[str, str], float],
         ] = {}
         self._matched: dict[tuple[str, str], CaptureCandidate] = {}
+        self._active_identity: tuple[str, str] | None = None
 
     @property
     def feed_count(self) -> int:
@@ -44,6 +47,8 @@ class CaptureMatcher:
         with self._lock:
             self._prune_locked(now=candidate.observed_at)
             self._feeds_by_media[identity] = candidate
+            if candidate.is_active:
+                self._active_identity = identity
             observation = self._recent_media.get(identity)
             if observation is not None:
                 media_url, request_headers, observed_at = observation
@@ -79,6 +84,11 @@ class CaptureMatcher:
     def recent_candidates(self) -> list[CaptureCandidate]:
         with self._lock:
             self._prune_locked(now=time.time())
+            if self.require_active:
+                if self._active_identity is None:
+                    return []
+                candidate = self._matched.get(self._active_identity)
+                return [candidate] if candidate is not None else []
             candidates = sorted(
                 self._matched.values(),
                 key=lambda item: item.observed_at,
@@ -117,6 +127,11 @@ class CaptureMatcher:
             for identity, observation in self._recent_media.items()
             if observation[2] >= cutoff
         }
+        if (
+            self._active_identity is not None
+            and self._active_identity not in self._feeds_by_media
+        ):
+            self._active_identity = None
 
 
 def _path_name(path: str) -> str:

@@ -78,7 +78,8 @@ def _candidate_from_node(node: dict) -> CaptureCandidate | None:
 
 
 def _normalized_candidate_from_node(node: dict) -> CaptureCandidate | None:
-    if node.get("schema") != "xiaolou_capture_v1":
+    schema = node.get("schema")
+    if schema not in {"xiaolou_capture_v1", "xiaolou_capture_active_v1"}:
         return None
 
     capture_id = str(node.get("capture_id") or "").strip()
@@ -98,6 +99,7 @@ def _normalized_candidate_from_node(node: dict) -> CaptureCandidate | None:
         cover_url=str(node.get("cover_url") or "").strip(),
         duration_ms=_to_int(node.get("duration_ms")),
         decrypt_key=_to_int(node.get("decrypt_key")),
+        is_active=schema == "xiaolou_capture_active_v1",
     )
 
 

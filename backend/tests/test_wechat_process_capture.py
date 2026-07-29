@@ -285,6 +285,10 @@ class ProcessCaptureSourceBoundaryTest(unittest.TestCase):
         self.assertNotIn("sunny.SetGlobalProxy(", source)
         self.assertIn('ProcessAddName(processName)', source)
         self.assertIn('"WeChatAppEx.exe"', source)
+        host_source = (
+            REPOSITORY_ROOT / "backend" / "wechat_capture" / "host.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("require_active=True", host_source)
         self.assertIn('"finder.video.qq.com:*"', source)
         self.assertIn('"*.wxs.qq.com:*"', source)
         self.assertIn("sender.handleTCP", source)

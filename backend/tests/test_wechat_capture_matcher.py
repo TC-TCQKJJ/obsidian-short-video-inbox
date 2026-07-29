@@ -160,6 +160,18 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].capture_id, "feed-extensionless")
 
+    def test_parser_marks_active_instrumentation_payload(self):
+        payload = {
+            "schema": "xiaolou_capture_active_v1",
+            "capture_id": "feed-active",
+            "media_url": "https://wxsmw.wxs.qq.com/video/active",
+        }
+
+        items = parse_feed_objects(payload)
+
+        self.assertEqual(len(items), 1)
+        self.assertTrue(items[0].is_active)
+
     def test_normalized_instrumentation_matches_observed_media_request(self):
         payload = {
             "schema": "xiaolou_capture_v1",
@@ -327,6 +339,59 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
         )
 
         self.assertEqual(matcher.recent_candidates(), [])
+
+    def test_active_mode_hides_matched_preloads_until_current_feed_arrives(self):
+        matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
+        preload = parse_feed_objects({"object": FEED})[0]
+        matcher.record_feed(preload)
+        matcher.record_media_request(
+            preload.media_url,
+            observed_at=time.time(),
+        )
+
+        self.assertEqual(matcher.recent_candidates(), [])
+
+        active = replace(preload, is_active=True)
+        matcher.record_feed(active)
+
+        self.assertEqual(
+            [item.capture_id for item in matcher.recent_candidates()],
+            ["feed-123"],
+        )
+
+    def test_active_mode_returns_only_latest_current_feed(self):
+        matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
+        first = replace(
+            parse_feed_objects({"object": FEED})[0],
+            is_active=True,
+        )
+        second_payload = {
+            **FEED_WITH_OBJECT_ID,
+            "objectDesc": {
+                **FEED_WITH_OBJECT_ID["objectDesc"],
+                "media": [
+                    {
+                        "url": "https://wxsmw.wxs.qq.com/video/second",
+                        "urlToken": "?token=second",
+                    }
+                ],
+            },
+        }
+        second = replace(
+            parse_feed_objects({"object": second_payload})[0],
+            is_active=True,
+        )
+        for candidate in (first, second):
+            matcher.record_feed(candidate)
+            matcher.record_media_request(
+                candidate.media_url,
+                observed_at=time.time(),
+            )
+
+        self.assertEqual(
+            [item.capture_id for item in matcher.recent_candidates()],
+            ["feed-object-456"],
+        )
 
     def test_recent_candidates_prunes_entries_older_than_max_age(self):
         matcher = CaptureMatcher(max_age_seconds=10)
