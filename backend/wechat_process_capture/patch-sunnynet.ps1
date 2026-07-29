@@ -40,6 +40,21 @@ if ($sunnySource.Contains("defaultManager") -or $publicSource.Contains("RootKey 
     throw "SunnyNet shared certificate material was not fully removed"
 }
 
+$driverModeMarker = "`tif DevMode == CrossCompiled.DrvNF {"
+if ([regex]::Matches($sunnySource, [regex]::Escape($driverModeMarker)).Count -ne 1) {
+    throw "Expected one SunnyNet process-driver mode switch"
+}
+$driverCacheInitialization = @"
+	if s.cache == nil {
+		s.cache = newCache(s)
+	}
+	s.cache.StartJanitor()
+"@
+$sunnySource = $sunnySource.Replace(
+    $driverModeMarker,
+    $driverCacheInitialization + "`n" + $driverModeMarker
+)
+
 $headerSource = [IO.File]::ReadAllText($headerPath)
 foreach ($pattern in @(
     '(?s)typedef struct _MIB_TCPROW2 \{.*?\} MIB_TCPROW2, \*PMIB_TCPROW2;\r?\n',

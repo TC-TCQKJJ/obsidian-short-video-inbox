@@ -196,6 +196,7 @@ func run() error {
 
 	if !sunny.OpenDrive(0) {
 		sunny.ProcessCancelAll()
+		sunny.Close()
 		return errors.New("SunnyNet process driver failed to start")
 	}
 	defer func() {
