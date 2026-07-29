@@ -315,6 +315,38 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
         self.assertEqual(parse_feed_objects(missing_token), [])
         self.assertEqual(parse_feed_objects(empty_token), [])
 
+    def test_parser_skips_non_media_item_before_video(self):
+        payload = {
+            "object": {
+                "id": "feed-video-after-avatar",
+                "nickname": "Target author",
+                "objectDesc": {
+                    "description": "Target title",
+                    "media": [
+                        {
+                            "url": "https://wx.qlogo.cn/avatar",
+                            "urlToken": "?token=avatar",
+                        },
+                        {
+                            "url": (
+                                "https://findera4.video.qq.com/251/20302/"
+                                "stodownload"
+                            ),
+                            "urlToken": "?token=video",
+                            "decodeKey": 42,
+                        },
+                    ],
+                },
+            }
+        }
+
+        items = parse_feed_objects(payload)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].capture_id, "feed-video-after-avatar")
+        self.assertIn("findera4.video.qq.com", items[0].media_url)
+        self.assertEqual(items[0].decrypt_key, 42)
+
     def test_parser_falls_back_to_object_id_when_id_is_absent(self):
         items = parse_feed_objects({"data": {"object": FEED_WITH_OBJECT_ID}})
 

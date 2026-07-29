@@ -43,16 +43,13 @@ def _candidate_from_node(node: dict) -> CaptureCandidate | None:
     object_id = str(node.get("id") or node.get("objectId") or "").strip()
     description = _object_description(node.get("objectDesc"))
     media_items = description.get("media") or []
-    media = media_items[0] if media_items else {}
-    base_url = str(media.get("url") or "").strip()
-    token = str(media.get("urlToken") or "").strip()
+    media, media_url = _select_media(media_items)
 
     if (
         not object_id
         or not isinstance(description, dict)
         or not isinstance(media, dict)
-        or not base_url
-        or not token
+        or not media_url
     ):
         return None
 
@@ -64,7 +61,6 @@ def _candidate_from_node(node: dict) -> CaptureCandidate | None:
             contact.get("nickname") or contact.get("nickName") or ""
         ).strip()
 
-    media_url = f"{base_url}{token}"
     return CaptureCandidate(
         capture_id=object_id,
         title=title,
@@ -75,6 +71,22 @@ def _candidate_from_node(node: dict) -> CaptureCandidate | None:
         duration_ms=_to_int(media.get("duration")),
         decrypt_key=_to_int(media.get("decodeKey")),
     )
+
+
+def _select_media(media_items) -> tuple[dict, str]:
+    if not isinstance(media_items, list):
+        return {}, ""
+    for media in media_items:
+        if not isinstance(media, dict):
+            continue
+        base_url = str(media.get("url") or "").strip()
+        token = str(media.get("urlToken") or "").strip()
+        if not base_url or not token:
+            continue
+        media_url = f"{base_url}{token}"
+        if _is_allowed_media_url(media_url):
+            return media, media_url
+    return {}, ""
 
 
 def _normalized_candidate_from_node(node: dict) -> CaptureCandidate | None:
