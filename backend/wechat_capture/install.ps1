@@ -6,6 +6,7 @@ $captureRoot = Join-Path $env:LOCALAPPDATA "Xiaolou\WechatCapture"
 $capturePython = Join-Path $captureRoot "venv\Scripts\python.exe"
 $requirements = Join-Path $PSScriptRoot "requirements.txt"
 $startScript = Join-Path $PSScriptRoot "start.ps1"
+$shortcutScript = Join-Path $PSScriptRoot "create-shortcut.ps1"
 $helperSource = Join-Path $backendRoot "wechat_process_capture\dist\wechat-process-capture.exe"
 $helperTarget = Join-Path $captureRoot "bin\wechat-process-capture.exe"
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "微信视频号捕获.lnk"
@@ -67,12 +68,18 @@ if ($thumbprint -notmatch "^[0-9A-F]{40}$") {
     throw "Certificate installation did not return a valid thumbprint."
 }
 
-$shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut($desktopShortcut)
-$shortcut.TargetPath = "powershell.exe"
-$shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`""
-$shortcut.WorkingDirectory = $backendRoot
-$shortcut.Save()
+$shortcutArguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`""
+& powershell.exe `
+    -NoProfile `
+    -ExecutionPolicy Bypass `
+    -File $shortcutScript `
+    -ShortcutPath $desktopShortcut `
+    -TargetPath "powershell.exe" `
+    -Arguments $shortcutArguments `
+    -WorkingDirectory $backendRoot
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to create the desktop shortcut."
+}
 
 Write-Host "Installed the Xiaolou capture CA in CurrentUser\Root."
 Write-Host "CA thumbprint: $thumbprint"
