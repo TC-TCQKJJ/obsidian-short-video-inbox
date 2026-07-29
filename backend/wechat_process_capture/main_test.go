@@ -121,6 +121,12 @@ func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
 	if !strings.Contains(captureVideoBridgeScript, `visibleStyle(parent)`) {
 		t.Fatal("expected hidden text ancestors to be excluded")
 	}
+	if strings.Contains(
+		captureVideoBridgeScript,
+		`element.contains(topElement)||`+"\n"+`topElement.contains(element)`,
+	) {
+		t.Fatal("did not expect common ancestors to expose occluded text")
+	}
 }
 
 func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {

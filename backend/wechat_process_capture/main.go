@@ -152,10 +152,11 @@ var y=Math.max(0,Math.min(viewportHeight-1,
 rect.top+rect.height/2));
 var topElement=document.elementFromPoint(x,y);
 if(!topElement)return false;
-if(topElement===element||element.contains(topElement)||
-topElement.contains(element))return true;
-return Boolean(allowParent&&element.parentElement&&
-element.parentElement.contains(topElement));
+if(topElement===element||element.contains(topElement))return true;
+return Boolean(allowParent&&(
+topElement.contains(element)||
+(element.parentElement&&
+element.parentElement.contains(topElement))));
 }catch(error){
 return false;
 }
