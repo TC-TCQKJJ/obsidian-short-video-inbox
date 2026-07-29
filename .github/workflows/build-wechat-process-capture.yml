@@ -6,6 +6,10 @@ on:
     paths:
       - "backend/wechat_process_capture/**"
       - ".github/workflows/build-wechat-process-capture.yml"
+  pull_request:
+    paths:
+      - "backend/wechat_process_capture/**"
+      - ".github/workflows/build-wechat-process-capture.yml"
 
 permissions:
   contents: read

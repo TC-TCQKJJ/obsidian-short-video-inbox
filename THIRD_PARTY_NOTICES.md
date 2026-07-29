@@ -1,5 +1,9 @@
 # Third-party notices
 
+The repository's original code is licensed under the MIT License. Third-party
+components listed below remain under their respective licenses and are not
+relicensed by the repository-level MIT License.
+
 `backend/script/wechat_media_decrypt.py` includes an ISAAC-64 implementation
 derived from `ltaoo/wx_channels_download`, itself derived from
 `Hanson/WechatSphDecrypt`.
