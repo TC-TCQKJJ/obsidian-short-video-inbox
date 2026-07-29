@@ -84,7 +84,7 @@ func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {
 	for _, expected := range []string{
 		`/__xiaolou_capture/feed`,
 		`xiaolou_capture_active_v1`,
-		`decrypt_key:Number`,
+		`decrypt_key:__xiaolou_active__?0:Number`,
 		`return __xiaolou_result__`,
 	} {
 		if !strings.Contains(text, expected) {
