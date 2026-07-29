@@ -281,7 +281,7 @@ class ProcessCaptureSourceBoundaryTest(unittest.TestCase):
         self.assertIn("SunnyNet.HTTPCertRules_Response", source)
         self.assertIn("SetMustTcpRegexp(rules, false)", source)
         self.assertIn("currentLoopbackProxy()", source)
-        self.assertIn("conn.SetAgent(sender.upstreamProxy", source)
+        self.assertIn('newEventSender(bridge, "", proxyTargets)', source)
         self.assertNotIn("sunny.SetGlobalProxy(", source)
         self.assertIn('ProcessAddName(processName)', source)
         self.assertIn('"WeChatAppEx.exe"', source)

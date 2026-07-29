@@ -202,10 +202,8 @@ func run() error {
 		return err
 	}
 	rules := interceptionRules
-	proxyURL := ""
 	var proxyTargets []string
-	if configuredProxy, configuredTargets, ok := currentLoopbackProxy(); ok {
-		proxyURL = configuredProxy
+	if _, configuredTargets, ok := currentLoopbackProxy(); ok {
 		proxyTargets = configuredTargets
 		rules += ";" + strings.Join(proxyTargets, ";")
 	}
@@ -213,7 +211,10 @@ func run() error {
 		return fmt.Errorf("configure narrow interception rules: %w", err)
 	}
 
-	sender := newEventSender(bridge, proxyURL, proxyTargets)
+	// Match the local proxy connection so SunnyNet can inspect its CONNECT
+	// target, then connect allowed WeChat hosts directly. Re-chaining to the
+	// same loopback proxy causes DNS failures and a blank Channels page.
+	sender := newEventSender(bridge, "", proxyTargets)
 	defer sender.close()
 	sunny.SetGoCallback(sender.handleHTTP, sender.handleTCP, nil, nil)
 	sunny.ProcessCancelAll()
