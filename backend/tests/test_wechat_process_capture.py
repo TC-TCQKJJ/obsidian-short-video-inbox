@@ -147,6 +147,20 @@ class ProcessCaptureEventProcessorTest(unittest.TestCase):
         )
         self.assertIn("已解密 2", self.processor.diagnostic_text())
 
+    def test_capture_failure_is_logged_without_event_payloads(self):
+        self.processor.handle({"type": "status", "state": "driver_ready"})
+        self.processor.handle(
+            {
+                "type": "status",
+                "state": "heartbeat",
+                "capture_error_count": 1,
+                "last_capture_error": "TLS handshake failed",
+            }
+        )
+
+        self.assertIn("失败 1 次", self.processor.diagnostic_text())
+        self.assertEqual(self.processor._last_capture_error, "TLS handshake failed")
+
     def test_malformed_response_body_is_rejected(self):
         with self.assertRaises(ValueError):
             self.processor.handle(

@@ -82,6 +82,8 @@ type bridgeEvent struct {
 	ObservedAt    float64           `json:"observed_at,omitempty"`
 	TCPCount      uint64            `json:"tcp_count,omitempty"`
 	HTTPCount     uint64            `json:"http_count,omitempty"`
+	CaptureErrors uint64            `json:"capture_error_count,omitempty"`
+	LastError     string            `json:"last_capture_error,omitempty"`
 	RequestCount  uint64            `json:"request_count,omitempty"`
 	ResponseCount uint64            `json:"response_count,omitempty"`
 	DroppedCount  uint64            `json:"dropped_count,omitempty"`
@@ -103,6 +105,8 @@ type eventSender struct {
 	done          chan struct{}
 	tcpCount      atomic.Uint64
 	httpCount     atomic.Uint64
+	captureErrors atomic.Uint64
+	lastError     atomic.Value
 	requestCount  atomic.Uint64
 	responseCount atomic.Uint64
 	droppedCount  atomic.Uint64
@@ -401,11 +405,17 @@ func (sender *eventSender) enqueue(event bridgeEvent) {
 }
 
 func (sender *eventSender) heartbeat() bridgeEvent {
+	lastError := ""
+	if value := sender.lastError.Load(); value != nil {
+		lastError, _ = value.(string)
+	}
 	return bridgeEvent{
 		Type:          "status",
 		State:         "heartbeat",
 		TCPCount:      sender.tcpCount.Load(),
 		HTTPCount:     sender.httpCount.Load(),
+		CaptureErrors: sender.captureErrors.Load(),
+		LastError:     lastError,
 		RequestCount:  sender.requestCount.Load(),
 		ResponseCount: sender.responseCount.Load(),
 		DroppedCount:  sender.droppedCount.Load(),
@@ -446,6 +456,9 @@ func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 			Headers: headers,
 			Body:    body,
 		})
+	case public.HttpRequestFail:
+		sender.captureErrors.Add(1)
+		sender.lastError.Store(sanitizeCaptureError(conn.Error()))
 	}
 }
 
@@ -453,6 +466,17 @@ func (sender *eventSender) handleTCP(conn SunnyNet.ConnTCP) {
 	if conn.Type() == public.SunnyNetMsgTypeTCPAboutToConnect {
 		sender.tcpCount.Add(1)
 	}
+}
+
+func sanitizeCaptureError(raw string) string {
+	message := strings.Join(strings.Fields(raw), " ")
+	if len(message) > 240 {
+		message = message[:240]
+	}
+	if message == "" {
+		return "unknown capture error"
+	}
+	return message
 }
 
 func isAllowedURL(rawURL string) bool {
