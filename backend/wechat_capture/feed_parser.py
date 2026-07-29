@@ -85,11 +85,13 @@ def _normalized_candidate_from_node(node: dict) -> CaptureCandidate | None:
     capture_id = str(node.get("capture_id") or "").strip()
     media_url = str(node.get("media_url") or "").strip()
     is_active = schema == "xiaolou_capture_active_v1"
-    if not capture_id:
-        return None
     if is_active:
         if not _is_allowed_media_url(media_url):
             media_url = ""
+        if not capture_id and not media_url:
+            return None
+    elif not capture_id:
+        return None
     elif not _is_allowed_media_url(media_url):
         return None
 

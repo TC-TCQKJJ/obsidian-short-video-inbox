@@ -172,6 +172,22 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
         self.assertTrue(items[0].is_active)
         self.assertEqual(items[0].media_url, "")
 
+    def test_parser_accepts_active_playing_media_without_capture_id(self):
+        items = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_active_v1",
+                "capture_id": "",
+                "media_url": (
+                    "https://findera4.video.qq.com/251/20302/stodownload"
+                    "?token=active"
+                ),
+            }
+        )
+
+        self.assertEqual(len(items), 1)
+        self.assertTrue(items[0].is_active)
+        self.assertEqual(items[0].capture_id, "")
+
     def test_normalized_instrumentation_matches_observed_media_request(self):
         payload = {
             "schema": "xiaolou_capture_v1",
@@ -382,11 +398,14 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
             is_active=True,
         )
         for candidate in (first, second):
-            matcher.record_feed(candidate)
+            preload = replace(candidate, is_active=False)
+            matcher.record_feed(preload)
             matcher.record_media_request(
                 candidate.media_url,
                 observed_at=time.time(),
             )
+        matcher.record_feed(first)
+        matcher.record_feed(second)
 
         self.assertEqual(
             [item.capture_id for item in matcher.recent_candidates()],
@@ -414,6 +433,37 @@ class CaptureContractAndMatcherTest(unittest.TestCase):
         matches = matcher.recent_candidates()
         self.assertEqual([item.capture_id for item in matches], ["feed-123"])
         self.assertIn("wxs.qq.com", matches[0].media_url)
+
+    def test_active_mode_joins_playing_media_without_request_recency(self):
+        matcher = CaptureMatcher(max_age_seconds=30, require_active=True)
+        preload = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_v1",
+                "capture_id": "feed-playing",
+                "title": "Playing target",
+                "media_url": (
+                    "https://findera4.video.qq.com/251/20302/stodownload"
+                    "?token=preload"
+                ),
+            }
+        )[0]
+        matcher.record_feed(preload)
+        active = parse_feed_objects(
+            {
+                "schema": "xiaolou_capture_active_v1",
+                "capture_id": "",
+                "media_url": (
+                    "https://findera4.video.qq.com/251/20302/stodownload"
+                    "?token=playing"
+                ),
+            }
+        )[0]
+
+        matcher.record_feed(active)
+
+        matches = matcher.recent_candidates()
+        self.assertEqual([item.capture_id for item in matches], ["feed-playing"])
+        self.assertIn("token=playing", matches[0].media_url)
 
     def test_recent_candidates_prunes_entries_older_than_max_age(self):
         matcher = CaptureMatcher(max_age_seconds=10)

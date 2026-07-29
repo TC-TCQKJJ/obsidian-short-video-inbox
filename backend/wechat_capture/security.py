@@ -21,6 +21,7 @@ ALLOWED_SUFFIXES = (
     ".wxqcloud.qq.com",
     ".wxlivecdn.com",
 )
+_FINDER_MEDIA_HOST_RE = re.compile(r"^finder[a-z0-9-]*\.video\.qq\.com$")
 _THUMBPRINT_RE = re.compile(r"^[0-9A-F]{40}$")
 
 
@@ -78,15 +79,18 @@ class CapturePaths:
 
 def is_allowed_host(host: str) -> bool:
     normalized = str(host or "").strip().rstrip(".").lower()
-    return normalized in EXACT_HOSTS or any(
-        normalized.endswith(suffix) for suffix in ALLOWED_SUFFIXES
+    return (
+        normalized in EXACT_HOSTS
+        or _FINDER_MEDIA_HOST_RE.fullmatch(normalized) is not None
+        or any(normalized.endswith(suffix) for suffix in ALLOWED_SUFFIXES)
     )
 
 
 def is_media_host(host: str) -> bool:
     normalized = str(host or "").strip().rstrip(".").lower()
-    return normalized == "finder.video.qq.com" or any(
-        normalized.endswith(suffix) for suffix in ALLOWED_SUFFIXES
+    return (
+        _FINDER_MEDIA_HOST_RE.fullmatch(normalized) is not None
+        or any(normalized.endswith(suffix) for suffix in ALLOWED_SUFFIXES)
     )
 
 

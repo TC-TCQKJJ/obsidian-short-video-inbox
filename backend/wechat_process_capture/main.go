@@ -119,6 +119,8 @@ const (
 	replaceFeedsReplacement            = `replaceFeeds($1,$2=!0){var __xiaolou_result__=(()=>{$3})();try{if(globalThis.__xiaolou_capture_feed__)globalThis.__xiaolou_capture_feed__(this.currentFeed,true);}catch(__xiaolou_error__){}return __xiaolou_result__;}}class`
 	captureBridgeScript                = `
 ;globalThis.__xiaolou_capture_feed__=function(__xiaolou_object__,__xiaolou_active__){try{var __xiaolou_desc__=__xiaolou_object__&&__xiaolou_object__.objectDesc;if(typeof __xiaolou_desc__==="string")try{__xiaolou_desc__=JSON.parse(__xiaolou_desc__);}catch(__xiaolou_parse_error__){return;}if(!__xiaolou_object__||!__xiaolou_desc__)return;var __xiaolou_id__=String(__xiaolou_object__.id||__xiaolou_object__.objectId||"");if(!__xiaolou_id__)return;var __xiaolou_media__=__xiaolou_desc__.media&&__xiaolou_desc__.media[0]||{};var __xiaolou_url__=String(__xiaolou_media__.url||"")+String(__xiaolou_media__.urlToken||"");if(!__xiaolou_active__&&!__xiaolou_url__)return;var __xiaolou_spec__=__xiaolou_media__.spec&&__xiaolou_media__.spec[0]||{};var __xiaolou_contact__=__xiaolou_object__.contact||{};fetch("` + captureFeedPath + `",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({schema:__xiaolou_active__?"xiaolou_capture_active_v1":"xiaolou_capture_v1",capture_id:__xiaolou_id__,nonce_id:String(__xiaolou_object__.objectNonceId||__xiaolou_object__.nonceId||""),title:String(__xiaolou_desc__.description||""),author:String(__xiaolou_object__.nickname||__xiaolou_contact__.nickname||__xiaolou_contact__.nickName||""),media_url:__xiaolou_active__?"":__xiaolou_url__,cover_url:__xiaolou_active__?"":String(__xiaolou_media__.coverUrl||""),duration_ms:__xiaolou_active__?0:Number(__xiaolou_media__.duration||__xiaolou_spec__.durationMs||0),decrypt_key:__xiaolou_active__?0:Number(__xiaolou_media__.decodeKey||0)})}).catch(function(){});}catch(__xiaolou_error__){}};`
+	captureVideoBridgeScript = `
+;globalThis.__xiaolou_capture_video__=function(__xiaolou_video__){try{var __xiaolou_url__=String(__xiaolou_video__&&(__xiaolou_video__.currentSrc||__xiaolou_video__.src)||"");if(!/^https?:\/\//i.test(__xiaolou_url__)||globalThis.__xiaolou_capture_video_url__===__xiaolou_url__)return;globalThis.__xiaolou_capture_video_url__=__xiaolou_url__;fetch("` + captureFeedPath + `",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({schema:"xiaolou_capture_active_v1",capture_id:"",media_url:__xiaolou_url__})}).catch(function(){});}catch(__xiaolou_error__){}};document.addEventListener("playing",function(__xiaolou_event__){var __xiaolou_target__=__xiaolou_event__.target;if(__xiaolou_target__&&String(__xiaolou_target__.tagName).toLowerCase()==="video")globalThis.__xiaolou_capture_video__(__xiaolou_target__);},true);[0,800,2000].forEach(function(__xiaolou_delay__){setTimeout(function(){document.querySelectorAll("video").forEach(function(__xiaolou_video__){if(!__xiaolou_video__.paused)globalThis.__xiaolou_capture_video__(__xiaolou_video__);});},__xiaolou_delay__);});`
 )
 
 type capturePaths struct {
@@ -811,7 +813,7 @@ func instrumentWechatResponse(
 			replaceFeedsReplacement,
 		)
 		if modified != beforeInstrumentation {
-			modified += captureBridgeScript
+			modified += captureBridgeScript + captureVideoBridgeScript
 		}
 	}
 	return []byte(modified), modified != source

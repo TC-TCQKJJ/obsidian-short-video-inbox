@@ -33,6 +33,8 @@ class CaptureMatcher:
         ] = {}
         self._matched: dict[tuple[str, str], CaptureCandidate] = {}
         self._active_capture_id: str | None = None
+        self._active_identity: tuple[str, str] | None = None
+        self._active_media_url = ""
         self._active_observed_at = 0.0
 
     @property
@@ -45,12 +47,21 @@ class CaptureMatcher:
         with self._lock:
             self._prune_locked(now=candidate.observed_at)
             if candidate.is_active:
-                self._active_capture_id = candidate.capture_id
+                if candidate.capture_id:
+                    self._active_capture_id = candidate.capture_id
+                identity = _media_identity(candidate.media_url)
+                if identity[0] and identity[1]:
+                    self._active_identity = identity
+                    self._active_media_url = candidate.media_url
                 self._active_observed_at = candidate.observed_at
+                self._match_active_identity_locked()
+                return
             identity = _media_identity(candidate.media_url)
             if not identity[0] or not identity[1]:
                 return
             self._feeds_by_media[identity] = candidate
+            if identity == self._active_identity:
+                self._match_active_identity_locked()
             observation = self._recent_media.get(identity)
             if observation is not None:
                 media_url, request_headers, observed_at = observation
@@ -87,14 +98,14 @@ class CaptureMatcher:
         with self._lock:
             self._prune_locked(now=time.time())
             if self.require_active:
+                if self._active_identity is not None:
+                    candidate = self._matched.get(self._active_identity)
+                    if candidate is None:
+                        self._log_active_diagnostics(active=1)
+                        return []
+                    return [candidate]
                 if self._active_capture_id is None:
-                    self.logger.info(
-                        "WeChat active feed diagnostics: active=0 feeds=%d "
-                        "media=%d matched=%d",
-                        len(self._feeds_by_media),
-                        len(self._recent_media),
-                        len(self._matched),
-                    )
+                    self._log_active_diagnostics(active=0)
                     return []
                 candidates = sorted(
                     (
@@ -106,13 +117,7 @@ class CaptureMatcher:
                     reverse=True,
                 )
                 if not candidates:
-                    self.logger.info(
-                        "WeChat active feed diagnostics: active=1 feeds=%d "
-                        "media=%d matched=%d active_matched=0",
-                        len(self._feeds_by_media),
-                        len(self._recent_media),
-                        len(self._matched),
-                    )
+                    self._log_active_diagnostics(active=1)
                 return candidates[:1]
             candidates = sorted(
                 self._matched.values(),
@@ -154,7 +159,31 @@ class CaptureMatcher:
         }
         if self._active_observed_at < cutoff:
             self._active_capture_id = None
+            self._active_identity = None
+            self._active_media_url = ""
             self._active_observed_at = 0.0
+
+    def _match_active_identity_locked(self) -> None:
+        if self._active_identity is None:
+            return
+        candidate = self._feeds_by_media.get(self._active_identity)
+        if candidate is None:
+            return
+        self._matched[self._active_identity] = dataclasses.replace(
+            candidate,
+            media_url=self._active_media_url or candidate.media_url,
+            observed_at=self._active_observed_at,
+        )
+
+    def _log_active_diagnostics(self, *, active: int) -> None:
+        self.logger.info(
+            "WeChat active feed diagnostics: active=%d feeds=%d media=%d "
+            "matched=%d active_matched=0",
+            active,
+            len(self._feeds_by_media),
+            len(self._recent_media),
+            len(self._matched),
+        )
 
 
 def _path_name(path: str) -> str:
