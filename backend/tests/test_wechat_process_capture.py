@@ -284,6 +284,8 @@ class ProcessCaptureSourceBoundaryTest(unittest.TestCase):
         self.assertIn("defaultManager", patch_source)
         self.assertIn("RootKey", patch_source)
         self.assertIn("s.cache = newCache(s)", patch_source)
+        self.assertIn("targetIP.IsLoopback()", patch_source)
+        self.assertIn("r.Target.Parse(res.Host, 443)", patch_source)
         self.assertIn("GetTcpTable2Func", patch_source)
         self.assertIn("MIIEpAIBAAKCAQEAzU+hPfoE", verify_source)
 

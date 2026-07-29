@@ -564,9 +564,20 @@ func (sender *eventSender) heartbeat() bridgeEvent {
 func (sender *eventSender) handleHTTP(conn SunnyNet.ConnHTTP) {
 	rawURL := conn.URL()
 	if conn.Type() == public.HttpRequestFail {
-		if rawURL == "" || isAllowedURL(rawURL) {
+		if isLoopbackURL(rawURL) {
+			sender.recordCaptureError(
+				"capture request retained the loopback proxy target",
+			)
+		} else if rawURL == "" || isAllowedURL(rawURL) {
 			sender.recordCaptureError(conn.Error())
 		}
+		return
+	}
+	if conn.Type() == public.HttpSendRequest && isLoopbackURL(rawURL) {
+		sender.recordCaptureError(
+			"capture request retained the loopback proxy target",
+		)
+		conn.StopRequest(http.StatusBadGateway, nil)
 		return
 	}
 	if !isAllowedURL(rawURL) {
@@ -641,6 +652,19 @@ func sanitizeCaptureError(raw string) string {
 		return "unknown capture error"
 	}
 	return message
+}
+
+func isLoopbackURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func isAllowedURL(rawURL string) bool {

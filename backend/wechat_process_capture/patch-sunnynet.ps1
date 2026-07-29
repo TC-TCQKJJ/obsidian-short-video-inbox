@@ -5,10 +5,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 $sunnyPath = Join-Path $VendorRoot "github.com\qtgolang\SunnyNet\SunnyNet\SunnyNet.go"
+$httpPath = Join-Path $VendorRoot "github.com\qtgolang\SunnyNet\SunnyNet\http.go"
 $publicPath = Join-Path $VendorRoot "github.com\qtgolang\SunnyNet\src\public\constobj.go"
 $headerPath = Join-Path $VendorRoot "github.com\qtgolang\SunnyNet\src\iphlpapi\c_iphlpapi_tcp.h"
 $cSourcePath = Join-Path $VendorRoot "github.com\qtgolang\SunnyNet\src\iphlpapi\c_iphlpapi_tcp.c"
-$requiredPaths = @($sunnyPath, $publicPath, $headerPath, $cSourcePath)
+$requiredPaths = @($sunnyPath, $httpPath, $publicPath, $headerPath, $cSourcePath)
 if ($requiredPaths.Where({ -not (Test-Path -LiteralPath $_) }).Count -ne 0) {
     throw "SunnyNet vendored source was not found"
 }
@@ -55,6 +56,29 @@ $sunnySource = $sunnySource.Replace(
     $driverCacheInitialization + "`n" + $driverModeMarker
 )
 
+$httpSource = [IO.File]::ReadAllText($httpPath)
+$loopbackTargetMarker = "`t`tres.Host = normalizeHostPort(req.Host)"
+if ([regex]::Matches($httpSource, [regex]::Escape($loopbackTargetMarker)).Count -ne 1) {
+    throw "Expected one SunnyNet HTTP target fallback marker"
+}
+$loopbackTargetRepair = @"
+		// Restore an HTTPS target parsed behind a loopback HTTP proxy.
+		targetIP := net.ParseIP(r.Target.Host)
+		if res.Host != "" && targetIP != nil && targetIP.IsLoopback() && r.Target.Port != 443 {
+			requestTarget := TargetInfo{}
+			requestTarget.Parse(res.Host, 443)
+			if requestTarget.IsDomain() {
+				r.Target.Parse(res.Host, 443)
+				res.URL.Host = res.Host
+			}
+		}
+
+"@
+$httpSource = $httpSource.Replace(
+    $loopbackTargetMarker,
+    $loopbackTargetMarker + "`n" + $loopbackTargetRepair
+)
+
 $headerSource = [IO.File]::ReadAllText($headerPath)
 foreach ($pattern in @(
     '(?s)typedef struct _MIB_TCPROW2 \{.*?\} MIB_TCPROW2, \*PMIB_TCPROW2;\r?\n',
@@ -87,7 +111,8 @@ foreach ($replacement in @(
 
 $utf8 = [Text.UTF8Encoding]::new($false)
 [IO.File]::WriteAllText($sunnyPath, $sunnySource, $utf8)
+[IO.File]::WriteAllText($httpPath, $httpSource, $utf8)
 [IO.File]::WriteAllText($publicPath, $publicSource, $utf8)
 [IO.File]::WriteAllText($headerPath, $headerSource, $utf8)
 [IO.File]::WriteAllText($cSourcePath, $cSource, $utf8)
-gofmt -w $sunnyPath $publicPath
+gofmt -w $sunnyPath $httpPath $publicPath

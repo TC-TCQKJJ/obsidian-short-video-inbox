@@ -56,6 +56,18 @@ func TestMediaURLIgnoresQueryString(t *testing.T) {
 	}
 }
 
+func TestLoopbackURL(t *testing.T) {
+	if !isLoopbackURL("https://127.0.0.1:7897/test.mp4") {
+		t.Fatal("expected a loopback proxy URL to be detected")
+	}
+	if !isLoopbackURL("https://localhost:7897/test.mp4") {
+		t.Fatal("expected localhost to be detected")
+	}
+	if isLoopbackURL("https://finder.video.qq.com/test.mp4") {
+		t.Fatal("did not expect a remote capture URL to be loopback")
+	}
+}
+
 func TestLooksLikeJSON(t *testing.T) {
 	if !looksLikeJSON("application/json; charset=utf-8", []byte("compressed")) {
 		t.Fatal("expected JSON content type to be accepted")
