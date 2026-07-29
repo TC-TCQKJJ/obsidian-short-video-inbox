@@ -122,51 +122,6 @@ const (
 ;globalThis.__xiaolou_capture_feed__=function(__xiaolou_object__,__xiaolou_active__){try{var __xiaolou_desc__=__xiaolou_object__&&__xiaolou_object__.objectDesc;if(typeof __xiaolou_desc__==="string")try{__xiaolou_desc__=JSON.parse(__xiaolou_desc__);}catch(__xiaolou_parse_error__){return;}if(!__xiaolou_object__||!__xiaolou_desc__)return;var __xiaolou_id__=String(__xiaolou_object__.id||__xiaolou_object__.objectId||"");if(!__xiaolou_id__)return;var __xiaolou_media__=__xiaolou_desc__.media&&__xiaolou_desc__.media[0]||{};var __xiaolou_url__=String(__xiaolou_media__.url||"")+String(__xiaolou_media__.urlToken||"");if(!__xiaolou_active__&&!__xiaolou_url__)return;var __xiaolou_spec__=__xiaolou_media__.spec&&__xiaolou_media__.spec[0]||{};var __xiaolou_contact__=__xiaolou_object__.contact||{};fetch("` + captureFeedPath + `",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({schema:__xiaolou_active__?"xiaolou_capture_active_v1":"xiaolou_capture_v1",capture_id:__xiaolou_id__,nonce_id:String(__xiaolou_object__.objectNonceId||__xiaolou_object__.nonceId||""),title:String(__xiaolou_desc__.description||""),author:String(__xiaolou_object__.nickname||__xiaolou_contact__.nickname||__xiaolou_contact__.nickName||""),media_url:__xiaolou_active__?"":__xiaolou_url__,cover_url:__xiaolou_active__?"":String(__xiaolou_media__.coverUrl||""),duration_ms:__xiaolou_active__?0:Number(__xiaolou_media__.duration||__xiaolou_spec__.durationMs||0),decrypt_key:__xiaolou_active__?0:Number(__xiaolou_media__.decodeKey||0)})}).catch(function(){});}catch(__xiaolou_error__){}};`
 	captureVideoBridgeScript = `
 ;(function(){
-function addSource(values,value){
-if(!value)return;
-if(Array.isArray(value)){
-value.forEach(function(item){addSource(values,item);});
-return;
-}
-if(typeof value==="object"){
-addSource(values,value.src);
-return;
-}
-values.push(String(value));
-}
-function videoSource(video){
-try{
-var values=[];
-addSource(values,video.currentSrc);
-addSource(values,video.src);
-addSource(values,video.getAttribute&&video.getAttribute("src"));
-if(video.querySelectorAll){
-video.querySelectorAll("source").forEach(function(source){
-addSource(values,source.src||source.getAttribute("src"));
-});
-}
-var player=video.player;
-try{
-if(!player&&globalThis.videojs&&
-typeof globalThis.videojs.getPlayer==="function"&&video.id){
-player=globalThis.videojs.getPlayer(video.id);
-}
-}catch(error){}
-if(player){
-["currentSource","currentSources","src"].forEach(function(name){
-try{
-if(typeof player[name]==="function")addSource(values,player[name]());
-}catch(error){}
-});
-}
-for(var index=0;index<values.length;index++){
-if(/^https?:\/\//i.test(values[index]))return values[index];
-}
-return values[0]||"";
-}catch(error){
-return "";
-}
-}
 function normalizedText(value){
 return String(value||"").replace(/\s+/g," ").trim();
 }
@@ -236,9 +191,8 @@ return contexts.slice(0,32);
 }
 function captureVideo(video){
 try{
-var url=videoSource(video);
 var contexts=videoContexts(video);
-var marker=url+"|"+contexts.join("|");
+var marker=contexts.join("|");
 if(!marker||globalThis.__xiaolou_capture_video_marker__===marker)return;
 globalThis.__xiaolou_capture_video_marker__=marker;
 fetch("` + captureFeedPath + `",{
@@ -247,7 +201,7 @@ headers:{"Content-Type":"application/json"},
 body:JSON.stringify({
 schema:"xiaolou_capture_active_v1",
 capture_id:"",
-media_url:url,
+media_url:"",
 context_texts:contexts
 })
 }).catch(function(){});

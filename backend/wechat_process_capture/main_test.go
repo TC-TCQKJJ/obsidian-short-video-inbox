@@ -109,6 +109,12 @@ func TestInstrumentWechatHTMLBustsScriptCacheOnly(t *testing.T) {
 	) {
 		t.Fatal("did not expect every unpaused preload video to be captured")
 	}
+	if !strings.Contains(captureVideoBridgeScript, `media_url:""`) {
+		t.Fatal("expected active DOM matching to ignore stale player media URLs")
+	}
+	if strings.Contains(captureVideoBridgeScript, `videoSource`) {
+		t.Fatal("did not expect player source probing in active DOM matching")
+	}
 }
 
 func TestInstrumentWechatAPIFunctionPostsNormalizedMetadata(t *testing.T) {
