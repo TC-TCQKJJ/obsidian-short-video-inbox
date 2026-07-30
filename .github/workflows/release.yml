@@ -57,6 +57,22 @@ jobs:
       - name: Run backend tests
         run: python -m unittest discover -s tests -p "test_*.py"
 
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check:release-safety
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   helper:
     runs-on: windows-latest
     defaults:
@@ -109,6 +125,7 @@ jobs:
     needs:
       - plugin
       - backend
+      - secrets
       - helper
     runs-on: ubuntu-latest
     permissions:

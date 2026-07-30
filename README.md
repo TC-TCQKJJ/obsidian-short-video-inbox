@@ -21,6 +21,7 @@ Whisper 备用转写。
 - 从 PC 微信识别当前可见的视频号视频，确认后提取完整音频。
 - 不保留原始 MP4，只保存音频、转写和必要元数据。
 - 在后端暂时不可用时，用 Windows DPAPI 加密待提交任务。
+- 豆包 API Key 使用 Windows DPAPI 加密并保存在 Vault 之外。
 - 把音频附件和转写写回指定的 Obsidian 收件箱。
 - 通过豆包 API 转写，或使用本地 Whisper。
 - 可与[收件箱 AI 初筛](https://github.com/TC-TCQKJJ/obsidian-inbox-ai-processor)
@@ -132,8 +133,13 @@ Set-Location ..\..
 - **附件目录**：保存音频和图文附件。
 - **本地后端 URL**：默认 `http://127.0.0.1:5050`。
 - **转写引擎**：豆包或本地 Whisper。
-- **豆包 API Key**：只保存在当前 Vault 的插件配置 `data.json` 中。
+- **豆包 API Key**：使用 Windows DPAPI 加密，保存在当前 Windows 用户的
+  `%LOCALAPPDATA%\Xiaolou\DouyinCapture\secrets` 中，不写入 Vault。
 - **录音设备**：直接取得音轨失败时的本地播放录音备用路径。
+
+从 `0.6.0` 升级时，插件会先把旧 `data.json` 中的 Key 写入 DPAPI 密钥库；
+只有加密写入和读取验证成功后，才会从 Vault 配置中移除旧明文字段。迁移失败
+时旧字段会保留并显示错误，不会静默丢失 Key。
 
 ## 隐私与网络披露
 
@@ -145,8 +151,10 @@ Set-Location ..\..
 - 抖音解析会访问抖音分享页和媒体 CDN；视频号采集会访问微信页面和媒体
   CDN。
 - 把后端 URL 改为远程地址会把音频和相关凭据发送到该服务器。
-- API Key、抓取令牌、签名媒体 URL、证书私钥、日志和运行输出均不提交到
-  仓库。
+- API Key 不写入 Vault；抓取令牌、签名媒体 URL 和证书私钥也只保存在
+  当前 Windows 用户的本机受保护目录。
+- API Key、抓取令牌、签名媒体 URL、证书私钥、日志和运行输出均不得提交到
+  仓库或发布包。
 
 ## 已知限制
 
@@ -167,8 +175,9 @@ npm run test:backend
 ```
 
 发布标签必须与 `manifest.json` 和 `package.json` 中的版本一致。发布工作流
-会重新测试并构建插件与微信助手、扫描助手中的上游共享私钥标记、生成 SHA256
-文件和构建证明，再创建待发布的 GitHub Release。
+会重新测试并构建插件与微信助手，运行 Gitleaks 和发布文件清单检查，扫描助手
+中的上游共享私钥标记，生成 SHA256 文件和构建证明，再创建待发布的 GitHub
+Release。
 
 ## 许可
 

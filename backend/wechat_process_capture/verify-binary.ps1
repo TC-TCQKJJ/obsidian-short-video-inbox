@@ -12,7 +12,7 @@ if (-not (Test-Path -LiteralPath $Executable)) {
 $binaryText = [Text.Encoding]::ASCII.GetString(
     [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Executable))
 )
-$upstreamPrivateKeyMarker = "MIIEpAIBAAKCAQEAzU+hPfoE"
+$upstreamPrivateKeyMarker = "MIIEpAIBAAKCAQEAzU+hPfoE" # gitleaks:allow
 if ($binaryText.Contains($upstreamPrivateKeyMarker)) {
     throw "Build contains SunnyNet's public default private key"
 }

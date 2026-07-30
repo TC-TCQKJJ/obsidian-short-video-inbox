@@ -65,6 +65,7 @@ from script.local_audio_recorder import (
 )
 from script.paths import OUTPUT_DIR
 from script.pipeline import process_douyin_share
+from script.secret_store import DoubaoApiKeyStore
 from script.transcriber import transcribe_audio
 from script.wechat_capture_jobs import JobStore
 from script.wechat_radium_scanner import (
@@ -79,6 +80,7 @@ app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
 WHISPER_MODELS = ["tiny", "base", "small", "medium", "large-v2", "large-v3"]
 LOCAL_RECORDING: RecordingSession | None = None
 WECHAT_CAPTURE_JOB_STORE: JobStore | None = None
+DOUBAO_API_KEY_STORE: DoubaoApiKeyStore | None = None
 
 
 def _read_transcript(out_dir: Path) -> str:
@@ -147,6 +149,17 @@ def _wechat_capture_store() -> JobStore:
     return WECHAT_CAPTURE_JOB_STORE
 
 
+def _doubao_api_key_store() -> DoubaoApiKeyStore:
+    configured = app.config.get("DOUBAO_API_KEY_STORE")
+    if configured is not None:
+        return configured
+
+    global DOUBAO_API_KEY_STORE
+    if DOUBAO_API_KEY_STORE is None:
+        DOUBAO_API_KEY_STORE = DoubaoApiKeyStore()
+    return DOUBAO_API_KEY_STORE
+
+
 def _wechat_capture_token() -> str:
     configured = app.config.get("WECHAT_CAPTURE_TOKEN")
     if configured is not None:
@@ -163,6 +176,16 @@ def _wechat_capture_authorized() -> bool:
 def _require_wechat_capture_auth():
     if not _wechat_capture_authorized():
         abort(401)
+
+
+def _resolve_doubao_api_key(data: dict) -> str:
+    supplied = str(data.get("doubao_api_key") or "").strip()
+    if supplied:
+        return supplied
+    if not request.headers.get("X-Xiaolou-Capture-Token"):
+        return ""
+    _require_wechat_capture_auth()
+    return _doubao_api_key_store().get()
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -214,10 +237,15 @@ def index():
 @app.route("/api/health")
 def api_health():
     """本地 Whisper 模式，无需云端 API Key。"""
+    _wechat_capture_token()
+    try:
+        api_key_configured = _doubao_api_key_store().is_configured()
+    except (OSError, UnicodeError):
+        api_key_configured = False
     return jsonify(
         {
             "success": True,
-            "api_key_configured": True,
+            "api_key_configured": api_key_configured,
             "engine": "local",
             "whisper": "faster-whisper",
             "doubao": "volc.seedasr.auc",
@@ -225,6 +253,25 @@ def api_health():
             "models": WHISPER_MODELS,
         }
     )
+
+
+@app.route("/api/secrets/doubao", methods=["GET", "PUT", "DELETE"])
+def api_doubao_secret():
+    _require_wechat_capture_auth()
+    store = _doubao_api_key_store()
+    try:
+        if request.method == "PUT":
+            data = request.get_json(silent=True)
+            if not isinstance(data, dict):
+                return jsonify({"success": False, "error": "Invalid JSON payload"}), 400
+            store.set(str(data.get("api_key") or ""))
+        elif request.method == "DELETE":
+            store.clear()
+        return jsonify({"success": True, "configured": store.is_configured()})
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except (OSError, UnicodeError):
+        return jsonify({"success": False, "error": "Secure API key storage failed"}), 500
 
 
 @app.route("/api/video/info", methods=["POST"])
@@ -244,7 +291,7 @@ def api_video_info():
 def api_audio_transcribe():
     data = request.get_json(silent=True) or {}
     audio_path = Path(data.get("audio_path") or "").resolve()
-    api_key = (data.get("doubao_api_key") or "").strip()
+    api_key = _resolve_doubao_api_key(data)
     resource_id = (data.get("doubao_resource_id") or "volc.seedasr.auc").strip()
     if not api_key:
         return jsonify({"success": False, "error": "豆包 API Key 尚未填写"}), 400
@@ -339,7 +386,7 @@ def api_local_audio_stop():
         model = data.get("model") or "base"
         if model not in WHISPER_MODELS:
             model = "base"
-        api_key = (data.get("doubao_api_key") or "").strip()
+        api_key = _resolve_doubao_api_key(data)
         resource_id = (data.get("doubao_resource_id") or "volc.seedasr.auc").strip()
         title = (data.get("title") or "本地播放录音").strip()
         author = (data.get("author") or "").strip()
@@ -430,7 +477,11 @@ def api_video_extract():
                 audio_sample_rate=16000,
                 skip_transcribe=skip_transcribe,
                 transcription_engine=transcription_engine,
-                doubao_api_key=data.get("doubao_api_key") or "",
+                doubao_api_key=(
+                    _resolve_doubao_api_key(data)
+                    if transcription_engine == "doubao"
+                    else ""
+                ),
                 doubao_resource_id=data.get("doubao_resource_id")
                 or "volc.seedasr.auc",
                 whisper_fallback=bool(data.get("whisper_fallback", True)),
@@ -541,6 +592,9 @@ def api_wechat_capture_start_job(job_id: str):
     settings = request.get_json(silent=True) or {}
     if not isinstance(settings, dict):
         return jsonify({"success": False, "error": "Invalid settings"}), 400
+    settings = dict(settings)
+    if (settings.get("transcription_engine") or "whisper") == "doubao":
+        settings["doubao_api_key"] = _resolve_doubao_api_key(settings)
     try:
         job = _wechat_capture_store().start(job_id, settings)
     except KeyError:
@@ -634,7 +688,11 @@ def api_wechat_radium_extract():
         audio_format="mp3",
         audio_sample_rate=16000,
         transcription_engine=transcription_engine,
-        doubao_api_key=data.get("doubao_api_key") or "",
+        doubao_api_key=(
+            _resolve_doubao_api_key(data)
+            if transcription_engine == "doubao"
+            else ""
+        ),
         doubao_resource_id=data.get("doubao_resource_id") or "volc.seedasr.auc",
         whisper_fallback=bool(data.get("whisper_fallback", True)),
     )

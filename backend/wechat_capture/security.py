@@ -155,6 +155,10 @@ def _reharden_private_path(path: Path) -> None:
     _tighten_path_acl(path)
 
 
+def harden_private_path(path: Path) -> None:
+    _tighten_path_acl(Path(path))
+
+
 def _tighten_path_acl(path: Path) -> None:
     permission = "(OI)(CI)F" if path.is_dir() else "(F)"
     username = os.environ["USERNAME"]
