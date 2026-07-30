@@ -150,7 +150,7 @@ jobs:
           package_root="dist/package/${package_name}"
           mkdir -p "$package_root"
           cp dist/plugin/main.js dist/plugin/manifest.json dist/plugin/styles.css "$package_root/"
-          cp -R backend scripts third_party "$package_root/"
+          cp -R agent-tools backend scripts third_party "$package_root/"
           cp README.md SECURITY.md CHANGELOG.md LICENSE THIRD_PARTY_NOTICES.md "$package_root/"
           mkdir -p "$package_root/backend/wechat_process_capture/dist"
           cp dist/helper/wechat-process-capture.exe \

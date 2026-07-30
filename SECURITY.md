@@ -23,6 +23,10 @@ or private note contents in a public issue.
 - Capture jobs and signed media details are protected with Windows DPAPI.
 - The Doubao API key is DPAPI encrypted outside the Obsidian Vault. The
   authenticated loopback API returns only whether a key is configured.
+- The optional MCP server uses stdio, connects only to the authenticated
+  loopback backend, and returns capture metadata through an explicit allowlist.
+  It does not expose API keys, auth tokens, certificates, signed media URLs,
+  request headers, capture payloads, or local output paths.
 - No raw MP4 is retained by the normal processing pipeline.
 
 The helper instruments named WeChat Finder functions in scripts served by
