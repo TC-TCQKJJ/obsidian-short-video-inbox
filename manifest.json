@@ -1,7 +1,7 @@
 {
   "id": "douyin-inbox-bridge",
   "name": "短视频收件箱桥接",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "minAppVersion": "1.8.7",
   "description": "提取收件箱中的抖音和微信视频号音轨，通过豆包或本地 Whisper 转写并写回笔记。",
   "author": "小楼",

@@ -24,6 +24,7 @@ Whisper 备用转写。
 - 豆包 API Key 使用 Windows DPAPI 加密并保存在 Vault 之外。
 - 把音频附件和转写写回指定的 Obsidian 收件箱。
 - 通过豆包 API 转写，或使用本地 Whisper。
+- 通过本机 MCP 工具让 OpenClaw、Hermes Agent 等智能体查询并启动已捕获任务。
 - 可与[收件箱 AI 初筛](https://github.com/TC-TCQKJJ/obsidian-inbox-ai-processor)
   连接，在转写完成后生成可审阅的分类和经验卡片建议。
 
@@ -126,6 +127,32 @@ Set-Location ..\..
 
 如果 `Ctrl+Alt+S` 被其他程序占用，助手会提示改用
 `Ctrl+Alt+Shift+S`。界面按钮不依赖快捷键。
+
+## 智能体工具
+
+`0.7.0` 提供一个 Windows 本机 stdio MCP 服务，可供 OpenClaw、Hermes
+Agent 和其他 MCP 客户端使用。它只连接 `127.0.0.1:5050`，并复用已有的
+本机认证令牌，不需要把令牌或豆包 API Key 写进智能体配置。
+
+MCP 服务只暴露五个受限工具：
+
+- 检查后端和任务数量；
+- 列出不含 URL、密钥和本机路径的捕获任务；
+- 启动一个已经列出并明确选择的任务；
+- 查询处理状态；
+- 分块读取已完成的转录。
+
+它不能创建任意媒体 URL 任务、读取任意本地文件、确认删除任务或访问证书和
+抓取载荷。安装与 OpenClaw/Hermes 配置见
+[`agent-tools/README.md`](agent-tools/README.md)。OpenClaw 可运行：
+
+```powershell
+.\scripts\register-openclaw-mcp.ps1
+```
+
+智能体和 MCP 服务必须运行在 Windows 捕获主机上。Mac 上的智能体需要先通过
+OpenClaw Nodes 或 SSH stdio 建立单独加固的远程进程通道；不要把 `5050`
+端口直接开放到局域网。
 
 ## 设置
 

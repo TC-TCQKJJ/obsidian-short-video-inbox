@@ -1,6 +1,6 @@
 {
   "name": "obsidian-short-video-inbox",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Capture and transcribe Douyin and WeChat Channels content into an Obsidian inbox.",
   "main": "main.js",
   "scripts": {
