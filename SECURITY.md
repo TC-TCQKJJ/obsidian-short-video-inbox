@@ -21,6 +21,8 @@ or private note contents in a public issue.
 - The helper attaches only to `WeChatAppEx.exe` and decrypts only the documented
   WeChat Channels allowlist.
 - Capture jobs and signed media details are protected with Windows DPAPI.
+- The Doubao API key is DPAPI encrypted outside the Obsidian Vault. The
+  authenticated loopback API returns only whether a key is configured.
 - No raw MP4 is retained by the normal processing pipeline.
 
 The helper instruments named WeChat Finder functions in scripts served by

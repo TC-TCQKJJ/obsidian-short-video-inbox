@@ -27,7 +27,6 @@ obsidian-content-capture-backend/
 │   ├── downloader.py
 │   ├── audio_extractor.py
 │   └── main.py
-├── docs/images/            # README 配图
 ├── web/                    # Flask Web + JSON API
 │   ├── app.py
 │   └── templates/index.html
@@ -98,14 +97,10 @@ python web/app.py
    点击 **提取文案**，开始完整流水线。右侧出现「提取中」与四步进度：
    - 解析分享链接 → 下载视频 → 提取音频 → 语音识别（图文作品跳过转写，通常几秒完成）
 
-   ![Web 提取进行中](docs/images/web-extracting.png)
-
    > 视频转写可能需数分钟，请勿关闭页面；终端需保持 `python web/app.py` 运行。
 
 5. **查看与导出结果**
    完成后右侧「提取结果」显示简体文案与字数，可 **复制** 或 **下载** `transcript.txt`；本地文件在 `output/{作品ID}_{标题}/`。
-
-   ![Web 提取完成](docs/images/web-result.png)
 
 #### 界面说明
 

@@ -19,6 +19,10 @@ const {
   sanitizeJobError,
   shouldCreateCaptureNote,
 } = require("./wechat-capture-client");
+const {
+  loadSecureSettings,
+  serializeSecureSettings,
+} = require("./secure-settings");
 
 const DEFAULT_SETTINGS = {
   inboxFolder: "00 收件箱",
@@ -26,7 +30,7 @@ const DEFAULT_SETTINGS = {
   backendUrl: "http://127.0.0.1:5050",
   whisperModel: "base",
   transcriptionEngine: "doubao",
-  doubaoApiKey: "",
+  doubaoApiKeyConfigured: false,
   doubaoResourceId: "volc.seedasr.auc",
   whisperFallback: true,
   audioCaptureDevice: "",
@@ -141,9 +145,7 @@ class DouyinInboxBridgePlugin extends Plugin {
     );
 
     this.app.workspace.onLayoutReady(() => {
-      void this.ensureBackend();
-      void this.scanQueues(false);
-      void this.syncWechatCaptureJobs(false);
+      void this.initializeBackendState();
       const activeFile = this.app.workspace.getActiveFile();
       if (activeFile) {
         this.scheduleManualTranscribeButton(activeFile.path);
@@ -179,7 +181,12 @@ class DouyinInboxBridgePlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const { settings, legacyDoubaoApiKey } = loadSecureSettings(
+      DEFAULT_SETTINGS,
+      await this.loadData(),
+    );
+    this.settings = settings;
+    this.legacyDoubaoApiKey = legacyDoubaoApiKey;
     if (
       !this.settings.wechatCaptureJobs ||
       typeof this.settings.wechatCaptureJobs !== "object" ||
@@ -190,7 +197,82 @@ class DouyinInboxBridgePlugin extends Plugin {
   }
 
   async saveSettings() {
-    await this.saveData(this.settings);
+    await this.saveData(
+      serializeSecureSettings(this.settings, this.legacyDoubaoApiKey),
+    );
+  }
+
+  async initializeBackendState() {
+    try {
+      await this.ensureBackend();
+      await this.migrateLegacyDoubaoApiKey();
+      await this.refreshDoubaoApiKeyStatus();
+    } catch (error) {
+      if (this.legacyDoubaoApiKey) {
+        new Notice(
+          `豆包 API Key 安全迁移尚未完成：${this.errorMessage(error)}`,
+          12000,
+        );
+      }
+    }
+    void this.scanQueues(false);
+    void this.syncWechatCaptureJobs(false);
+  }
+
+  hasDoubaoApiKey() {
+    return Boolean(
+      this.settings.doubaoApiKeyConfigured || this.legacyDoubaoApiKey,
+    );
+  }
+
+  legacyDoubaoApiKeyPayload() {
+    return this.legacyDoubaoApiKey || "";
+  }
+
+  async migrateLegacyDoubaoApiKey() {
+    if (!this.legacyDoubaoApiKey) {
+      return;
+    }
+    await this.wechatCaptureRequest("/api/secrets/doubao", "PUT", {
+      api_key: this.legacyDoubaoApiKey,
+    });
+    this.legacyDoubaoApiKey = "";
+    this.settings.doubaoApiKeyConfigured = true;
+    await this.saveSettings();
+    new Notice("豆包 API Key 已迁移到本机 DPAPI 加密存储。", 7000);
+  }
+
+  async refreshDoubaoApiKeyStatus() {
+    const data = await this.wechatCaptureRequest("/api/secrets/doubao");
+    const configured = data.configured === true;
+    if (this.settings.doubaoApiKeyConfigured !== configured) {
+      this.settings.doubaoApiKeyConfigured = configured;
+      await this.saveSettings();
+    }
+    return configured;
+  }
+
+  async setDoubaoApiKey(apiKey) {
+    const value = String(apiKey || "").trim();
+    if (!value) {
+      throw new Error("豆包 API Key 不能为空");
+    }
+    await this.ensureBackend();
+    await this.wechatCaptureRequest("/api/secrets/doubao", "PUT", {
+      api_key: value,
+    });
+    this.legacyDoubaoApiKey = "";
+    this.settings.doubaoApiKeyConfigured = true;
+    this.missingDoubaoKeyNotified = false;
+    await this.saveSettings();
+  }
+
+  async clearDoubaoApiKey() {
+    await this.ensureBackend();
+    await this.wechatCaptureRequest("/api/secrets/doubao", "DELETE");
+    this.legacyDoubaoApiKey = "";
+    this.settings.doubaoApiKeyConfigured = false;
+    await this.saveSettings();
   }
 
   wechatCaptureTokenPath() {
@@ -213,16 +295,19 @@ class DouyinInboxBridgePlugin extends Plugin {
     return token;
   }
 
+  async authenticatedBackendHeaders() {
+    return {
+      "Content-Type": "application/json",
+      "X-Xiaolou-Capture-Token": await this.loadWechatCaptureToken(),
+    };
+  }
+
   async wechatCaptureRequest(endpoint, method = "GET", body = null) {
-    const token = await this.loadWechatCaptureToken();
     const response = await requestUrl({
       url: `${this.settings.backendUrl}${endpoint}`,
       method,
       throw: false,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Xiaolou-Capture-Token": token,
-      },
+      headers: await this.authenticatedBackendHeaders(),
       ...(body === null ? {} : { body: JSON.stringify(body) }),
     });
     const data = response.json;
@@ -242,7 +327,7 @@ class DouyinInboxBridgePlugin extends Plugin {
       transcription_engine: this.settings.transcriptionEngine,
       doubao_api_key:
         this.settings.transcriptionEngine === "doubao"
-          ? this.settings.doubaoApiKey.trim()
+          ? this.legacyDoubaoApiKeyPayload()
           : "",
       doubao_resource_id: this.settings.doubaoResourceId,
       whisper_fallback: this.settings.whisperFallback,
@@ -691,7 +776,7 @@ class DouyinInboxBridgePlugin extends Plugin {
 
   async extractContent(sourceUrl, platform) {
     let engine = this.settings.transcriptionEngine;
-    if (engine === "doubao" && !this.settings.doubaoApiKey.trim()) {
+    if (engine === "doubao" && !this.hasDoubaoApiKey()) {
       if (!this.missingDoubaoKeyNotified) {
         new Notice("豆包 API Key 尚未填写，本次使用本地 Whisper。", 6000);
         this.missingDoubaoKeyNotified = true;
@@ -705,14 +790,14 @@ class DouyinInboxBridgePlugin extends Plugin {
     const response = await requestUrl({
       url: `${this.settings.backendUrl}/api/video/extract`,
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await this.authenticatedBackendHeaders(),
       body: JSON.stringify({
         url: sourceUrl,
         platform: platform.id,
         model: this.settings.whisperModel,
         transcription_engine: engine,
         doubao_api_key:
-          engine === "doubao" ? this.settings.doubaoApiKey.trim() : "",
+          engine === "doubao" ? this.legacyDoubaoApiKeyPayload() : "",
         doubao_resource_id:
           engine === "doubao" ? this.settings.doubaoResourceId : "",
         whisper_fallback: this.settings.whisperFallback,
@@ -732,7 +817,8 @@ class DouyinInboxBridgePlugin extends Plugin {
   async checkDoubaoEnvironment() {
     try {
       await this.ensureBackend();
-      const keyStatus = this.settings.doubaoApiKey.trim()
+      await this.refreshDoubaoApiKeyStatus();
+      const keyStatus = this.hasDoubaoApiKey()
         ? "API Key 已填写"
         : "API Key 尚未填写";
       new Notice(
@@ -854,7 +940,7 @@ class DouyinInboxBridgePlugin extends Plugin {
   }
 
   async manualTranscribe(noteFile, button = null, status = null) {
-    if (!this.settings.doubaoApiKey.trim()) {
+    if (!this.hasDoubaoApiKey()) {
       new Notice("请先在插件设置中填写豆包 API Key。", 6000);
       return;
     }
@@ -878,10 +964,10 @@ class DouyinInboxBridgePlugin extends Plugin {
         url: `${this.settings.backendUrl}/api/audio/transcribe`,
         method: "POST",
         throw: false,
-        headers: { "Content-Type": "application/json" },
+        headers: await this.authenticatedBackendHeaders(),
         body: JSON.stringify({
           audio_path: this.localFilePath(audioFile),
-          doubao_api_key: this.settings.doubaoApiKey.trim(),
+          doubao_api_key: this.legacyDoubaoApiKeyPayload(),
           doubao_resource_id: this.settings.doubaoResourceId,
           title: frontmatter.source_title || noteFile.basename,
           author: frontmatter.author || "",
@@ -944,10 +1030,10 @@ class DouyinInboxBridgePlugin extends Plugin {
         url: `${this.settings.backendUrl}/api/local-audio/stop`,
         method: "POST",
         throw: false,
-        headers: { "Content-Type": "application/json" },
+        headers: await this.authenticatedBackendHeaders(),
         body: JSON.stringify({
           model: this.settings.whisperModel,
-          doubao_api_key: this.settings.doubaoApiKey.trim(),
+          doubao_api_key: this.legacyDoubaoApiKeyPayload(),
           doubao_resource_id: this.settings.doubaoResourceId,
           title: frontmatter.source_title || noteFile.basename,
           author: frontmatter.author || "",
@@ -1037,7 +1123,7 @@ class DouyinInboxBridgePlugin extends Plugin {
       url: `${this.settings.backendUrl}/api/wechat-radium/extract`,
       method: "POST",
       throw: false,
-      headers: { "Content-Type": "application/json" },
+      headers: await this.authenticatedBackendHeaders(),
       body: JSON.stringify({
         url: extractUrl || "",
         minutes: 240,
@@ -1045,7 +1131,7 @@ class DouyinInboxBridgePlugin extends Plugin {
         transcription_engine: this.settings.transcriptionEngine,
         doubao_api_key:
           this.settings.transcriptionEngine === "doubao"
-            ? this.settings.doubaoApiKey.trim()
+            ? this.legacyDoubaoApiKeyPayload()
             : "",
         doubao_resource_id: this.settings.doubaoResourceId,
         whisper_fallback: this.settings.whisperFallback,
@@ -1622,18 +1708,64 @@ class DouyinInboxBridgeSettingTab extends PluginSettingTab {
           }),
       );
 
+    let pendingDoubaoApiKey = "";
+    let saveDoubaoApiKeyButton = null;
+    const doubaoKeyConfigured = this.plugin.hasDoubaoApiKey();
     new Setting(containerEl)
       .setName("豆包 API Key")
-      .setDesc("必须使用火山引擎语音技术新版控制台生成的 APP Key，对应请求头 X-Api-Key。")
+      .setDesc(
+        `${doubaoKeyConfigured ? "已安全保存在本机" : "尚未配置"}；` +
+          "Key 使用 Windows DPAPI 加密，不写入 Vault。",
+      )
       .addText((text) => {
         text.inputEl.type = "password";
         text
-          .setPlaceholder("在此粘贴 X-Api-Key")
-          .setValue(this.plugin.settings.doubaoApiKey)
-          .onChange(async (value) => {
-            this.plugin.settings.doubaoApiKey = value.trim();
-            this.plugin.missingDoubaoKeyNotified = false;
-            await this.plugin.saveSettings();
+          .setPlaceholder(
+            doubaoKeyConfigured ? "输入新 Key 可替换" : "在此粘贴 X-Api-Key",
+          )
+          .onChange((value) => {
+            pendingDoubaoApiKey = value.trim();
+            saveDoubaoApiKeyButton?.setDisabled(!pendingDoubaoApiKey);
+          });
+      })
+      .addButton((button) => {
+        saveDoubaoApiKeyButton = button;
+        button
+          .setButtonText("保存")
+          .setCta()
+          .setDisabled(true)
+          .onClick(async () => {
+            try {
+              await this.plugin.setDoubaoApiKey(pendingDoubaoApiKey);
+              new Notice("豆包 API Key 已安全保存。", 5000);
+              this.display();
+            } catch (error) {
+              new Notice(
+                `保存豆包 API Key 失败：${this.plugin.errorMessage(error)}`,
+                10000,
+              );
+            }
+          });
+      })
+      .addExtraButton((button) => {
+        button
+          .setIcon("trash-2")
+          .setTooltip("移除豆包 API Key")
+          .setDisabled(!doubaoKeyConfigured)
+          .onClick(async () => {
+            if (!window.confirm("确定移除本机保存的豆包 API Key？")) {
+              return;
+            }
+            try {
+              await this.plugin.clearDoubaoApiKey();
+              new Notice("豆包 API Key 已移除。", 5000);
+              this.display();
+            } catch (error) {
+              new Notice(
+                `移除豆包 API Key 失败：${this.plugin.errorMessage(error)}`,
+                10000,
+              );
+            }
           });
       });
 
